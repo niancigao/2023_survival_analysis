@@ -1,0 +1,1457 @@
+---
+title: "存活分析 期末報告"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=T, results='hide', message=FALSE, warning=FALSE}
+# install.packages('pandoc')
+# library(pandoc)
+# install.packages('xfun')
+# install.packages('cli')
+# install.packages("ggpubr")
+# library(fastDummies)           # dummy variable
+
+library(survival)                # survival function
+library(KMsurv)                  # 資料集
+# install.packages("rlang") 
+# library(icenReg)               # interval censore regression
+# remove.packages("pandoc")
+library(ggplot2)
+library(VIM)                     # aggr是VIM包中的函数，可以形成缺失图。
+library(corrplot)                # 相關係數矩陣圖
+
+library(cli)                     # ggsurvplot
+library(ggpubr)                  # ggsurvplot
+library(survminer)               # ggsurvplot
+library(xfun)
+# remove.packages("xfun")
+library("splines")
+```
+
+## 動機
+
+食道雖然不像肝臟幾乎沒感覺，但也是個大家平常不會特別注意到的一個器官，<br>
+能找出影響食道癌的特徵，有助於防患未然
+
+## 資料來源
++ [食道癌](https://www.cbioportal.org/study/clinicalData?id=stes_tcga_pub)
+
+```{r}
+data0 = read.csv("C:/Users/user/Desktop/survival_analysis/finally/stes_tcga_pub_clinical_data.csv",header=T)
+# summary(data0)
+```
+
+## 整理資料
+
++ 559 obs. of  108 variables
++ 559*0.8 = 447.2
++ 移除缺失值超過 559 - 448 = 111 的資料
+
+```{r}
+aggr(data0, plot = F)
+```
+
+```{r}
+data1 = subset(data0,select = -c(ARHGAP26.ARHGAP6.CLDN18.Rearrangement,Barretts.Esophagus,CDKN2A.Silencing,
+                                 Days.from.surgery.to.last.followup,Days.from.surgery.to.recurrence,
+                                 Death.from.Initial.Pathologic.Diagnosis.Date,Distant.Metastasis.Pathologic.Spread,
+                                 DNA.Methylation.Cluster...EC,DNA.Methylation.Cluster...GEA,DNA.Methylation.Cluster...GEA.CIN,
+                                 DNA.Methylation.Cluster...SCC,Esophageal.tumor.cental.location,GEA.CIN.Integrated.Cluster.COCA,
+                                 GEA.CIN.Integrated.Cluster.Consensus,GEA.CIN.Integrated.Cluster.iCluster,
+                                 GEA.CIN.Integrated.Cluster.MKL.KNN.4,GEA.CIN.Integrated.Cluster.MKL.KNN.7,
+                                 GEA.CIN.Integrated.Cluster.SuperCluster,GEA.CIN.Integrated.Cluster.Voting,GEJ.Category,
+                                 Gene.Expression.Cluster...GEA.CIN,Intestinal.Type.Subclass,Lauren.Class,Major.Anatomic.Site,
+                                 MET.Skipped.Exons.18...19,MET.Skipped.Exon.2,miRNA.Expression.Cluster...EC,miRNA.Expression.Cluster...GEA,
+                                 miRNA.Expression.Cluster...GEA.CIN,miRNA.Expression.Cluster...SCC,MRNA.Expression.Cluster.EC,
+                                 MRNA.Expression.Cluster.GEA,MRNA.Expression.Cluster.SCC,Percent.Lymphocyte.Infiltration,
+                                 Recurrence,Reflux.History,Regional.Lymph.Node,Regional.Lymph.Nodes,RPPA.Cluster...EC,RPPA.Cluster...GEA,
+                                 RPPA.Cluster...GEA.CIN,RPPA.Cluster...SCC,SCC.Cluster.iCluster.and.SMARCA4,SCNA.Cluster.EC,
+                                 SCNA.Cluster.GEA.CIN,SCNA.Cluster.SCC,Signet.Ring,Person.Cigarette.Smoking.History.Pack.Year.Value,
+                                 TNM.Stage,Patient.Smoking.History.Category,Tumor.extent,WHO.Class))  
+# 挑選的變數不加引號
+# str(data1) : 559 obs. of  56 variables
+```
+
+```{r}
+aggr(data1, prop = F, number = T, combined = T)
+```
+
++ 559 obs. of  56 variables
++ 去掉沒用 & 重複/相關性高 & 變異性小的變數
+
+```{r}
+data2 = subset(data1,select = -c(Study.ID,Patient.ID,Sample.ID,Cancer.Type,Cancer.Type.Detailed,
+                                 Number.of.Samples.Per.Patient,Sample.Type,Somatic.Status))
+
+# 挑選的變數不加引號
+# str(data2) : 559 obs. of  48 variables
+```
+
+## 變數解釋
+
+1. "Absolute.cancer.dna.fraction" : 絕對癌症 DNA 分數，(num.)<br>
+通過腫瘤樣本體細胞拷貝數變異（CNV）與單核苷酸位點變異（SNV）數據，<br>
+推斷腫瘤純度及惡性腫瘤細胞倍性的算法。
+
+2. "Absolute.Extract.Ploidy" : 絕對.提取物.倍性，(num.)<br>
+倍性水平是指雙倍體體細胞 (2n) 或單倍體配子體細胞 (1n) 中染色體組的數量。
+
+3. "Absolute.Extract.Purity" : 絕對提取物純度，(num.)
+
+4. "Diagnosis.Age" : 診斷年齡，(num.)，首次診斷出病症或疾病的年齡
+
+5. "ARID1A.Protein.Coding" : ARID1A 蛋白質編碼，(int.0:NO,1:YES)<br>
+ARID1A 是一個基因，它編碼一種蛋白質，稱為AT-rich interaction domain-containing protein 1A（ARID1A）。<br><br>
+
+蛋白質編碼是指基因的 DNA 序列轉譯成蛋白質的過程。<br><br>
+
++ ARID1A 基因的突變或缺失與多種癌症的發展和進展相關，尤其是在卵巢癌、子宮內膜癌和胰腺癌等癌症中觀察到 ARID1A 的變異。
+
++ ARID1A 蛋白質也被認為與細胞週期調控和細胞增殖相關。功能異常可能導致基因的表達異常和細胞生長的失控，從而促進癌症的發生。
+
+6. "CDKN2A.Methylation" : CDKN2A 甲基化，(logi.FALSE,TRUE)<br>
+CDKN2A 是一個基因，也被稱為 p16INK4a，它在細胞週期調控中扮演重要的角色。<br>
+正常情況下可以抑制細胞週期的進行，從而阻止細胞無節制地分裂和生長。<br><br>
+
+甲基化是一種表觀遺傳修飾，它涉及到 DNA 分子上的化學改變，這些改變可以影響基因的表達方式。<br>
+在癌症發展中扮演重要角色，它可以促進基因的失活或啟動，進而影響細胞的增殖、分化和轉移等過程。<br><br>
+
+CDKN2A 甲基化指的是在 CDKN2A 基因區域的 DNA 上加上甲基基團。<br>
+甲基基團可以附著在DNA上的特定位置，這樣就改變了基因區域的結構和功能。<br>
+(這可能會導致基因的表達受到抑制或關閉，從而影響細胞週期的調控)
+
+7. "Country" : 國家，(chr.)
+
+8. "EBV.Positive" : 伊普斯坦-巴爾病毒陽性，(int.)，<br>
+EBV 是一種 DNA 病毒，它可以感染人類的 B 淋巴細胞，並在體內引起多種疾病。(喉嚨痛、疲勞、淋巴結腫大相關)
+
+9. "EC"，(int.0:FALSE,1:YES)，<br>
+EC 可能代表食道攝影檢查、食道黏膜刷取檢查、食道鏡檢查
+
+10. "EC.SMG"，(int.0:FALSE,1:YES)，<br>
+EC.SMG 可能代表食道超聲內視鏡檢查，也可能指食道超聲引導下淋巴結活檢
+
+11. "Estimated.Leukocyte.Percentage" : 估計的白血球百分比，(num.)，<br>
+提供關於白血球組成的信息，幫助醫生判斷患者的免疫狀態和健康狀況
+
+12. "Fraction.Genome.Altered" : 基因組改變比例，(num.)，<br>
+腫瘤細胞中發生基因組改變的比例，可能影響基因的功能和調控，從而導致細胞的異常增殖和癌症的發展。<br>
+如果腫瘤細胞中有多個區域發生了基因組改變，值就會較高。
+
+13. "Gastric.Classification" : 胃.分類，(chr.)
+
+14. "GEA"，(int.0:FALSE,1:YES)，<br>
+可能代表腹部超聲檢查、食道攝影檢查、內視鏡檢查
+
+15. "GEA.CIN"，食道細胞異常檢查，(int.0:FALSE,1:YES)，<br>
+CIN 是一種癌前病變，指的是食道上皮細胞的異常增生和形態變化，可能是食道癌發展的前兆。
+
+16. "GEA.CIN.SMG"，(int.0:FALSE,1:YES)，<br>
+可能表示在食道癌檢查中同時進行食道細胞異常檢查和腹部超聲檢查
+
+17. "GEA.GEJ"，(int.0:FALSE,1:YES)，<br>
+可能表示在食道癌檢查中同時進行上消化道鏡檢查以及專注於胃食道連接處的評估
+
+18. "GEA.SMG"，(int.0:FALSE,1:YES)，<br>
+可能表示在食道癌檢查中同時進行腹部超聲和上消化道鏡檢查
+
+19. "Genome.Doublings" : 基因體倍增，(int.)，<br>
+細胞的染色體數目增加為正常倍數的兩倍，它會影響細胞的功能和癌症的發展。<br>
+在某些癌症中，細胞的染色體數目可以增加，稱為基因體倍增
+
+20. "Neoplasm.Histologic.Grade" : 腫瘤.組織學.分級，(chr.)，<br>
+低分級通常表示腫瘤細胞較接近正常組織，分化程度較好(成熟度高，惡性度低)，<br>
+高分級則表示腫瘤細胞較不正常，分化程度較差(成熟度低，惡性度高，轉移或增殖的能力較好)
+
+21. "HER2.Amplification.Status" : 人類表皮生長因子受體2基因放大的狀態，(int.0:正常,1:放大)，<br>
+HER2 放大導致 HER2 受體在細胞表面過度表達，這可能促進癌症細胞的生長和擴散。<br>
+HER2 放大(基因的拷貝數量增加)在乳腺癌中相對常見，並且與乳腺癌的惡性程度和預後有關。
+
+22. "KRAS.Protein.Coding" : KRAS蛋白編碼，(int.0:FALSE,1:YES)<br>
+KRAS 基因是一個重要的腫瘤抑制基因，它在調節細胞生長和分化中起著關鍵的作用，特別是大腸癌和肺癌等
+
++ 蛋白質編碼是指基因的 DNA 序列轉譯成蛋白質的過程。
+
+23. "MLH1.Methylation" : MLH1甲基化，(logi.FALSE,TRUE)<br>
+
+MLH1 基因，它編碼一種蛋白質，稱為Mismatch Repair Protein Mlh1。<br>
+這個蛋白質參與 DNA 配對修復機制，可以修復DNA中的錯配對或錯誤插入/刪除<br><br>
+
+MLH1甲基化導致基因組中的MLH1基因失去表達，這意味著蛋白質無法正常產生。<br>
+缺乏 MLH1蛋白質會干擾 DNA 配對修復機制，使得 DNA 錯誤無法被及時修復，增加細胞的突變風險
+
++ 甲基化是一種表觀遺傳變化，即DNA序列不變，但DNA上的甲基基團的分佈發生改變
+
+24. "MLH1.Silencing" : MLH1 沉默，(logi.FALSE,TRUE)<br>
+MLH1 基因的沉默或失活，常見的原因是MLH1基因的甲基化
+
+25. "MSI.Status" : 微衛星不穩定性的狀態，(chr.)，<br>
+
+微衛星是 DNA 序列中重複的短片段，它們在基因組中存在並參與 DNA 修復和穩定性的維護。<br>
+正常情況下，微衛星序列會保持穩定，並且在 DNA 複製和細胞分裂過程中被正確複製
+
++ 微衛星穩定（MSS）：腫瘤組織中微衛星序列保持穩定，沒有明顯的不穩定性
++ 微衛星不穩定（MSI）：腫瘤組織中出現微衛星不穩定性，表明微衛星序列的錯誤或缺陷
+
+26. "Mutation.Count" : 突變計數，(int.)
+
+27. "Mutation.Rate" : 突變率，(num.)，<br>
+在一個特定基因或基因群中突變事件發生的頻率
+
+28. "Mutation.Rate.Cluster" : 突變率簇，(chr.)，<br>
+突變率簇是一個術語，用於指代基因組中具有相似突變率的一組基因或突變事件。<br>
+這些基因或突變事件可能在突變的類型、頻率或其他相關特徵上存在一定的相似性。
+
+29. "New.Neoplasm.Event.Post.Initial.Therapy.Indicator" : 新的腫瘤。事件.後.初始.治療.指標，(chr,YES:,NO:)，<br>
+在初次治療後是否出現新的腫瘤事件。
+
++ Positive/Yes：可能意味著癌症復發、轉移或出現了新的原發腫瘤
++ Negative/No：意味著患者在初次治療後沒有出現新的腫瘤或腫瘤復發的跡象
+
+30. "Oncotree.Code" : 腫瘤樹代碼，(chr.)，<br>
+根據癌症的特徵和分類系統制定的代碼。它是一種簡短的字母和數字組合，用於標識特定癌症類型
+
+31. "Overall.Survival..Months." : 總體.生存..月，(num.)，**目標!**
+
+32. "Overall.Survival.Status" : 總體.生存.狀態，(chr.1:DECEASED,0:LIVING)，**目標!**
+
+33. "American.Joint.Committee.on.Cancer.Metastasis.Stage.Code" : 美國人。聯合委員會。癌症.轉移.分期.代碼，(chr)                 
+
++ M0 表示沒有檢測到遠處轉移
++ M1 表示已檢測到遠處轉移
+
+34. "Neoplasm.Disease.Lymph.Node.Stage.American.Joint.Committee.on.Cancer.Code"  : 腫瘤。疾病。淋巴。節點。階段。美國癌症聯合委員會，(chr)
+
++ N0 表示未檢測到淋巴結轉移
++ N1 表示有限淋巴結參與
++ N2 表示中等淋巴結參與
++ N3 表示廣泛淋巴結參與。
+
+35. "American.Joint.Committee.on.Cancer.Tumor.Stage.Code"  : 美國人。聯合委員會。癌症.腫瘤.分期.代碼，(chr)
+
++ T1 表示腫瘤大小較小且僅局限於原發部位
++ T2 表示腫瘤稍大且有輕微的局部擴散
+
+
++ TNM 分期系統，包括癌症的腫瘤大小（T）、淋巴結狀態（N）和轉移程度（M）
+
+36. "Percent.Tumor.Cells" : 癌細胞百分比，(num.)，<br>
+指在一個樣本或組織中，癌症細胞所占的百分比
+
+37. "Percent.Tumor.Nuclei" : 癌細胞核百分比，(num.)，<br>
+指在一個樣本或組織中，癌症細胞核所佔的百分比<br>
+通常情況下，癌細胞核比正常細胞核更大、更異常，且其形狀、染色質和核分裂等特徵也可能不同
+
+38. "Person.Neoplasm.Cancer.Status" : 人體腫瘤癌症狀態，(chr.TUMOR_FREE/WITH_TUMOR)，<br>
+描述腫瘤的有無、腫瘤的種類、腫瘤的大小和擴散程度，以及其他與腫瘤狀態相關的信息
+
+39. "PIK3CA.Protein.Coding" : PIK3CA 蛋白質編碼，(int.0:FALSE,1:YES)<br>
+
+磷脂酰肌醇3激酶是一種酶，參與細胞內訊號傳遞途徑中的 PI3K/AKT 通路。<br>
+該途徑在調控細胞生長、存活、增殖和代謝等多種生物學過程中起著關鍵作用。
+
++ PIK3CA 基因突變或過度表達與多種腫瘤的發生和進展有關，包括乳腺癌、卵巢癌、大腸癌、胃癌等
+
+40. "RHOA.Protein.Coding" : RHOA 蛋白質編碼，(int.0:FALSE,1:YES)<br>
+RHOA 是編碼 RhoA 蛋白質的基因，它能夠受到細胞內的訊號刺激而被活化，進而影響細胞的生理功能
+
++ RHOA 基因的突變或異常活化可能導致細胞的遷移、侵襲和轉移能力增強，從而促進腫瘤的進展和轉移
+
+
++ 蛋白質編碼是指基因的 DNA 序列轉譯成蛋白質的過程
+
+41. "Surgical.Margin.Resection.Status" : 手術邊緣切除狀態，(chr.)，<br>
+指在手術過程中腫瘤或病變組織周圍的切緣是否被完全切除的狀態。
+
++ 正常組織（Negative Margin，切緣未檢測到腫瘤或病變組織）
++ 不確定（Close Margin，切緣附近可能存在腫瘤或病變組織）
++ 腫瘤或病變組織殘留（Positive Margin，切緣檢測到腫瘤或病變組織）
+
+正常的手術切緣切除意味著切除的組織邊緣周圍未見明顯的腫瘤或病變組織
+
+42. "SCC" : 鳞状细胞癌，(int.,0:NO,1:YES)，<br>
+
+43. "SCC.SMG"，(int.,0,1)，(int.,0:NO,1:YES)，<br>
+"SMG" 可以代表 SLNM、Mediastinoscopy、Groove Node Dissection等檢查項目
+
+44. "SCNA.Cluster.GEA" : 基因組拷貝數異常在胃食道腺癌中的聚類分析，(chr.)，<br>
+描述基因組拷貝數異常的模式，使用聚類分析方法將相似的拷貝數異常模式的腫瘤分到同一個聚類中
+
+45. "Sex" : 性別 
+
+46. "TMB..nonsynonymous." : 腫瘤組織中非同義突變的數量，(num.)，<br>
+這是用於評估腫瘤細胞基因組變異性的指標。<br><br>
+
+高 TMB.nonsynonymous
++ 暗示著腫瘤組織中存在大量的基因突變，可能對免疫系統的識別和攻擊產生影響
++ 腫瘤可能對免疫檢查點抑制劑等免疫療法有較好的反應，因為它們可能具有更多被免疫系統識別的突變異常
+
+47. "TP53.Protein.Coding" : TP53 蛋白質編碼，(int.0:FALSE,1:YES)<br>
+
++ TP53 是人類體內最為重要的腫瘤抑制基因之一，被稱為 "守護基因"
++ p53 蛋白質在調控細胞生長、遺傳穩定性和抗腫瘤功能中發揮著重要的角色
+
+TP53 的突變可能導致 p53 蛋白質的功能喪失或減弱，從而降低細胞對DNA損傷的應答和防止腫瘤發展的能力。
+
++ 蛋白質編碼是指基因的 DNA 序列轉譯成蛋白質的過程
+
+48. "Tumor.Stage" : 腫瘤階段，(chr.)，<br>
+
++ 559 obs. of  48 variables
++ 去掉沒用 & 重複/相關性高 & 變異性小的變數
+
+```{r}
+corrplot(cor(data2[,1:3], use = "complete.obs"))
+corrplot(cor(data2[,8:10], use = "complete.obs"))
+corrplot(cor(data2[,14:19], use = "complete.obs"))
+corrplot(cor(data2[,23:24], use = "complete.obs"))
+corrplot(cor(data2[,26:27], use = "complete.obs"))
+corrplot(cor(data2[,36:37], use = "complete.obs"))
+corrplot(cor(data2[,42:43], use = "complete.obs"))
+```
+
+```{r}
+data3 = subset(data2,select = -c(Absolute.cancer.dna.fraction, EC.SMG, GEA, GEA.CIN, GEA.SMG,
+                                 MLH1.Silencing, Mutation.Count, Mutation.Rate.Cluster, Oncotree.Code,
+                                 American.Joint.Committee.on.Cancer.Metastasis.Stage.Code,
+                                 Neoplasm.Disease.Lymph.Node.Stage.American.Joint.Committee.on.Cancer.Code,
+                                 American.Joint.Committee.on.Cancer.Tumor.Stage.Code, SCC.SMG))
+
+# 挑選的變數不加引號
+# str(data3) : 559 obs. of  35 variables
+```
+
++ **559 obs. of  35 variables**
+
+```{r}
+aggr(data3, prop = F, number = T, combined = T)
+```
+
+## 補缺失值
+
++ 分出存活和死亡，分別填補各列中位數，類別變數取眾數
+
+```{r}
+data3_live = data3[data3$Overall.Survival.Status == '0:LIVING',]
+data3_death = data3[data3$Overall.Survival.Status == '1:DECEASED',]
+```
+
++ data3_live
+
+```{r}
+aggr(data3_live, plot = F)
+```
+
+```{r}
+### 數值
+
+data3_live$Absolute.Extract.Ploidy[is.na(data3_live$Absolute.Extract.Ploidy)] = median(data3_live$Absolute.Extract.Ploidy, na.rm = T)
+data3_live$Absolute.Extract.Purity[is.na(data3_live$Absolute.Extract.Purity)] = median(data3_live$Absolute.Extract.Purity, na.rm = T)
+data3_live$Diagnosis.Age[is.na(data3_live$Diagnosis.Age)] = median(data3_live$Diagnosis.Age, na.rm = T)
+data3_live$ARID1A.Protein.Coding[is.na(data3_live$ARID1A.Protein.Coding)] = median(data3_live$ARID1A.Protein.Coding, na.rm = T)
+data3_live$CDKN2A.Methylation[is.na(data3_live$CDKN2A.Methylation)] = median(data3_live$CDKN2A.Methylation, na.rm = T)
+data3_live$Estimated.Leukocyte.Percentage[is.na(data3_live$Estimated.Leukocyte.Percentage)] = median(data3_live$Estimated.Leukocyte.Percentage, na.rm = T)
+data3_live$Fraction.Genome.Altered[is.na(data3_live$Fraction.Genome.Altered)] = median(data3_live$Fraction.Genome.Altered, na.rm = T)
+data3_live$Genome.Doublings[is.na(data3_live$Genome.Doublings)] = median(data3_live$Genome.Doublings, na.rm = T)
+data3_live$HER2.Amplification.Status[is.na(data3_live$HER2.Amplification.Status)] = median(data3_live$HER2.Amplification.Status, na.rm = T)
+data3_live$KRAS.Protein.Coding[is.na(data3_live$KRAS.Protein.Coding)] = median(data3_live$KRAS.Protein.Coding, na.rm = T)
+data3_live$MLH1.Methylation[is.na(data3_live$MLH1.Methylation)] = median(data3_live$MLH1.Methylation, na.rm = T)
+data3_live$Mutation.Rate[is.na(data3_live$Mutation.Rate)] = median(data3_live$Mutation.Rate, na.rm = T)
+data3_live$Percent.Tumor.Cells[is.na(data3_live$Percent.Tumor.Cells)] = median(data3_live$Percent.Tumor.Cells, na.rm = T)
+data3_live$PIK3CA.Protein.Coding[is.na(data3_live$PIK3CA.Protein.Coding)] = median(data3_live$PIK3CA.Protein.Coding, na.rm = T)
+data3_live$RHOA.Protein.Coding[is.na(data3_live$RHOA.Protein.Coding)] = median(data3_live$RHOA.Protein.Coding, na.rm = T)
+data3_live$TMB..nonsynonymous.[is.na(data3_live$TMB..nonsynonymous.)] = median(data3_live$TMB..nonsynonymous., na.rm = T)
+data3_live$TP53.Protein.Coding[is.na(data3_live$TP53.Protein.Coding)] = median(data3_live$TP53.Protein.Coding, na.rm = T)
+
+### 類別
+
+data3_live$MSI.Status[is.na(data3_live$MSI.Status)] = sort(data3_live$MSI.Status, decreasing = T)[1]
+data3_live$New.Neoplasm.Event.Post.Initial.Therapy.Indicator[is.na(data3_live$New.Neoplasm.Event.Post.Initial.Therapy.Indicator)] = sort(data3_live$New.Neoplasm.Event.Post.Initial.Therapy.Indicator, decreasing = T)[1]
+data3_live$Person.Neoplasm.Cancer.Status[is.na(data3_live$Person.Neoplasm.Cancer.Status)] = sort(data3_live$Person.Neoplasm.Cancer.Status, decreasing = T)[1]
+data3_live$Surgical.Margin.Resection.Status[is.na(data3_live$Surgical.Margin.Resection.Status)] = sort(data3_live$Surgical.Margin.Resection.Status, decreasing = T)[1]
+data3_live$SCNA.Cluster.GEA[is.na(data3_live$SCNA.Cluster.GEA)] = sort(data3_live$SCNA.Cluster.GEA, decreasing = T)[1]
+data3_live$Tumor.Stage[is.na(data3_live$Tumor.Stage)] = sort(data3_live$Tumor.Stage, decreasing = T)[1]
+
+```
+
+```{r}
+aggr(data3_live, plot = F)
+```
+
++ data3_death
+
+```{r}
+aggr(data3_death, plot = F)
+```
+
+```{r}
+### 數值
+
+data3_death$Absolute.Extract.Ploidy[is.na(data3_death$Absolute.Extract.Ploidy)] = median(data3_death$Absolute.Extract.Ploidy, na.rm = T)
+data3_death$Absolute.Extract.Purity[is.na(data3_death$Absolute.Extract.Purity)] = median(data3_death$Absolute.Extract.Purity, na.rm = T)
+data3_death$Diagnosis.Age[is.na(data3_death$Diagnosis.Age)] = median(data3_death$Diagnosis.Age, na.rm = T)
+data3_death$ARID1A.Protein.Coding[is.na(data3_death$ARID1A.Protein.Coding)] = median(data3_death$ARID1A.Protein.Coding, na.rm = T)
+data3_death$CDKN2A.Methylation[is.na(data3_death$CDKN2A.Methylation)] = median(data3_death$CDKN2A.Methylation, na.rm = T)
+data3_death$Estimated.Leukocyte.Percentage[is.na(data3_death$Estimated.Leukocyte.Percentage)] = median(data3_death$Estimated.Leukocyte.Percentage, na.rm = T)
+data3_death$Fraction.Genome.Altered[is.na(data3_death$Fraction.Genome.Altered)] = median(data3_death$Fraction.Genome.Altered, na.rm = T)
+data3_death$Genome.Doublings[is.na(data3_death$Genome.Doublings)] = median(data3_death$Genome.Doublings, na.rm = T)
+data3_death$HER2.Amplification.Status[is.na(data3_death$HER2.Amplification.Status)] = median(data3_death$HER2.Amplification.Status, na.rm = T)
+data3_death$KRAS.Protein.Coding[is.na(data3_death$KRAS.Protein.Coding)] = median(data3_death$KRAS.Protein.Coding, na.rm = T)
+data3_death$MLH1.Methylation[is.na(data3_death$MLH1.Methylation)] = median(data3_death$MLH1.Methylation, na.rm = T)
+data3_death$Mutation.Rate[is.na(data3_death$Mutation.Rate)] = median(data3_death$Mutation.Rate, na.rm = T)
+data3_death$Percent.Tumor.Cells[is.na(data3_death$Percent.Tumor.Cells)] = median(data3_death$Percent.Tumor.Cells, na.rm = T)
+data3_death$PIK3CA.Protein.Coding[is.na(data3_death$PIK3CA.Protein.Coding)] = median(data3_death$PIK3CA.Protein.Coding, na.rm = T)
+data3_death$RHOA.Protein.Coding[is.na(data3_death$RHOA.Protein.Coding)] = median(data3_death$RHOA.Protein.Coding, na.rm = T)
+data3_death$TMB..nonsynonymous.[is.na(data3_death$TMB..nonsynonymous.)] = median(data3_death$TMB..nonsynonymous., na.rm = T)
+data3_death$TP53.Protein.Coding[is.na(data3_death$TP53.Protein.Coding)] = median(data3_death$TP53.Protein.Coding, na.rm = T)
+data3_death$Percent.Tumor.Nuclei[is.na(data3_death$Percent.Tumor.Nuclei)] = median(data3_death$Percent.Tumor.Nuclei, na.rm = T)
+
+### 類別
+
+data3_death$MSI.Status[is.na(data3_death$MSI.Status)] = sort(data3_death$MSI.Status, decreasing = T)[1]
+data3_death$New.Neoplasm.Event.Post.Initial.Therapy.Indicator[is.na(data3_death$New.Neoplasm.Event.Post.Initial.Therapy.Indicator)] = sort(data3_death$New.Neoplasm.Event.Post.Initial.Therapy.Indicator, decreasing = T)[1]
+data3_death$Person.Neoplasm.Cancer.Status[is.na(data3_death$Person.Neoplasm.Cancer.Status)] = sort(data3_death$Person.Neoplasm.Cancer.Status, decreasing = T)[1]
+data3_death$Surgical.Margin.Resection.Status[is.na(data3_death$Surgical.Margin.Resection.Status)] = sort(data3_death$Surgical.Margin.Resection.Status, decreasing = T)[1]
+data3_death$SCNA.Cluster.GEA[is.na(data3_death$SCNA.Cluster.GEA)] = sort(data3_death$SCNA.Cluster.GEA, decreasing = T)[1]
+data3_death$Tumor.Stage[is.na(data3_death$Tumor.Stage)] = sort(data3_death$Tumor.Stage, decreasing = T)[1]
+
+```
+
+```{r}
+aggr(data3_death, plot = F)
+```
+
+## Finally DATA
++ 559 obs. of  35 variables
+
+```{r}
+data4 = rbind(data3_live,data3_death)
+data4[data4$Overall.Survival.Status == '0:LIVING',"Overall.Survival.Status"] = 0
+data4[data4$Overall.Survival.Status == "1:DECEASED","Overall.Survival.Status"] = 1
+data4$Overall.Survival.Status = as.numeric(data4$Overall.Survival.Status)
+head(data4)
+```
+
+```{r}
+aggr(data4, prop = F, number = T, combined = T)
+```
+
+## 模型
+
+### Kaplan-Meier estimate
+
++ **不考慮變數**
+
+```{r}
+fit.km = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ 1, data=data4, conf.type="log-log")
+temp = summary(fit.km)  
+temp
+
+### conf.type=c("log","log-log","plain","none") 
+### objects(fit.km)
+```
+
+### Plot K-M estimators vs. time
+
+```{r}
+plot(fit.km, conf.int=T,
+     main = "K-M estimate",
+     xlab = "months",
+     ylab = "probability")  # K-M estimate plot
+```
+
++ 累積風險函數
++ $S(t)=e^{-H(t)}$
++ $-log(S(t)=H(t))$
+
+```{r}
+# list(temp$time, -log(temp$surv)) 
+plot(temp$time, -log(temp$surv),
+     type = "b",
+     main = "cumulative hazard function",
+     xlim = c(0,120))
+```
+
+### Log rank test
+
++ test 整個風險函數有無差異
++ **不考慮其他變數**
+
+Group(類別變數):
+1. ARID1A.Protein.Coding : ARID1A 蛋白質編碼，(int.0:NO,1:YES)
+2. CDKN2A.Methylation : CDKN2A 甲基化，(logi.FALSE,TRUE)
+3. Country : 國家，(chr.)
+4. EBV.Positive : 伊普斯坦-巴爾病毒陽性，(int.)
+5. EC，(int.0:NO,1:YES)
+6. Gastric.Classification : 胃.分類，(chr.)
+7. GEA.CIN.SMG，(int.0:NO,1:YES)
+8. GEA.GEJ，(int.0:NO,1:YES)
+9. Genome.Doublings : 基因體倍增，(int.)
+10. Neoplasm.Histologic.Grade : 腫瘤.組織學.分級，(chr.)
+11. HER2.Amplification.Status" : 人類表皮生長因子受體2基因放大的狀態，(int.0:正常,1:放大)
+12. KRAS.Protein.Coding : KRAS蛋白編碼，(int.0:NO,1:YES)
+13. MLH1.Methylation : MLH1甲基化，(logi.FALSE,TRUE)
+14. MSI.Status : 微衛星不穩定性的狀態，(chr.)
+15. New.Neoplasm.Event.Post.Initial.Therapy.Indicator" : 新的腫瘤。事件.後.初始.治療.指標，(chr,YES/NO)
+16. Person.Neoplasm.Cancer.Status : 人體腫瘤癌症狀態，(chr.TUMOR_FREE/WITH_TUMOR)
+17. PIK3CA.Protein.Coding : PIK3CA 蛋白質編碼，(int.0:NO,1:YES)
+18. RHOA.Protein.Coding : RHOA 蛋白質編碼，(int.0:NO,1:YES)
+19. Surgical.Margin.Resection.Status : 手術邊緣切除狀態，(chr.)
+20. SCC : 鳞状细胞癌，(int.,0:NO,1:YES)
+21. SCNA.Cluster.GEA : 基因組拷貝數異常在胃食道腺癌中的聚類分析，(chr.)
+22. Sex : 性別 
+23. TP53.Protein.Coding : TP53 蛋白質編碼，(int.0:NO,1:YES)
+24. Tumor.Stage : 腫瘤階段，(chr.)
+
++ 權重 : p = q = 0
++ H0:h1(t)=h2(t)
+
+1. ARID1A.Protein.Coding : ARID1A 蛋白質編碼，(int.0:NO,1:YES)
+
+```{r}
+fit.rank1 = survdiff(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ ARID1A.Protein.Coding, data=data4)
+fit.rank1
+```
+
++ p = 0.1 > 0.05，不拒絕H0，ARID1A.Protein.Coding 不顯著影響生存函數
+
+```{r}
+fit.rank11 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ ARID1A.Protein.Coding, data=data4, conf.type="log-log")
+# summary(fit.rank11)
+```
+
++ K-M estimate plot
++ [用R畫存活曲線Survival curve](https://blog.yjtseng.info/post/2020-05-13-survival-curve/)
+
+```{r}
+# library(survminer)
+res = ggsurvplot(fit.rank11,
+                 pval = TRUE,
+                 pval.coord = c(100,0.9),
+                 conf.int = TRUE,
+                 risk.table = TRUE,
+                 fontsize = 4,
+                 tables.theme = clean_theme())
+res
+
+# surv_pvalue(fit.rank11) # 預設的檢定方法為log-rank test
+```
+
+2. CDKN2A.Methylation : CDKN2A 甲基化，(logi.FALSE,TRUE)
+
+```{r}
+fit.rank2 = survdiff(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ CDKN2A.Methylation, data=data4)
+fit.rank2
+
+fit.rank22 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ CDKN2A.Methylation, data=data4, conf.type="log-log")
+surv_pvalue(fit.rank22)
+```
+
++ p = 0.21 > 0.05，不拒絕H0，CDKN2A.Methylation 不顯著影響生存函數
+
+```{r}
+# library(survminer)
+res2 = ggsurvplot(fit.rank22,
+                  pval = TRUE,
+                  pval.coord = c(100,0.9),
+                  conf.int = TRUE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res2
+
+# surv_pvalue(fit.rank22) # 預設的檢定方法為log-rank test
+```
+
+3. Country : 國家，(chr.)
+
+```{r}
+fit.rank3 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ factor(Country), data=data4, conf.type="log-log")
+surv_pvalue(fit.rank3)
+```
+
++ p < 0.0001 < 0.05，拒絕H0，Country 顯著影響生存函數
+
+```{r}
+# library(survminer)
+res3 = ggsurvplot(fit.rank3,
+                  pval = TRUE,
+                  font.tickslab = 10,
+                  font.legend = 6,
+                  pval.coord = c(100,0.9),
+                  conf.int = F,
+                  risk.table = F,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res3
+
+# surv_pvalue(fit.rank3) # 預設的檢定方法為log-rank test
+```
+
+4. EBV.Positive : 伊普斯坦-巴爾病毒陽性，(int.)
+
+```{r}
+fit.rank4 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ EBV.Positive, data=data4, conf.type="log-log")
+surv_pvalue(fit.rank4)
+
+res4 = ggsurvplot(fit.rank4,
+                  pval = TRUE,
+                  pval.coord = c(100,0.9),
+                  conf.int = TRUE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res4
+```
+
++ p = 0.5 > 0.05，不拒絕H0，EBV.Positive 不顯著影響生存函數
+
+
+5. EC，(int.0:NO,1:YES)
+
+```{r}
+fit.rank5 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ EC, data=data4, conf.type="log-log")
+surv_pvalue(fit.rank5)
+
+res5 = ggsurvplot(fit.rank5,
+                  pval = TRUE,
+                  pval.coord = c(100,0.9),
+                  conf.int = TRUE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res5
+```
+
++ p = 0.17 > 0.05，不拒絕H0，EC 不顯著影響生存函數
+
+
+6. Gastric.Classification : 胃.分類，(chr.)
+
+```{r}
+fit.rank6 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Gastric.Classification, data=data4, conf.type="log-log")
+
+res6 = ggsurvplot(fit.rank6,
+                  pval = TRUE,
+                  font.legend = 8,
+                  pval.coord = c(100,0.9),
+                  conf.int = FALSE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res6
+```
+
++ p = 0.18 > 0.05，不拒絕H0，Gastric.Classification 不顯著影響生存函數
+
+
+7. GEA.CIN.SMG，(int.0:NO,1:YES)
+
+```{r}
+fit.rank7 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ GEA.CIN.SMG, data=data4, conf.type="log-log")
+
+res7 = ggsurvplot(fit.rank7,
+                  pval = TRUE,
+                  font.legend = 8,
+                  pval.coord = c(100,0.9),
+                  conf.int = TRUE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res7
+```
+
++ p = 0.44 > 0.05，不拒絕H0，GEA.CIN.SMG 不顯著影響生存函數
+
+
+8. GEA.GEJ，(int.0:NO,1:YES)
+
+```{r}
+fit.rank8 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ GEA.GEJ, data=data4, conf.type="log-log")
+
+res8 = ggsurvplot(fit.rank8,
+                  pval = TRUE,
+                  pval.coord = c(100,0.9),
+                  conf.int = TRUE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res8
+```
+
++ p = 0.29 > 0.05，不拒絕H0，GEA.GEJ 不顯著影響生存函數
+
+
+9. Genome.Doublings : 基因體倍增，(int.)
+
+```{r}
+fit.rank9 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Genome.Doublings, data=data4, conf.type="log-log")
+
+res9 = ggsurvplot(fit.rank9,
+                  pval = TRUE,
+                  font.legend = 8,
+                  pval.coord = c(100,0.9),
+                  conf.int = FALSE,
+                  risk.table = TRUE,
+                  fontsize = 4,
+                  tables.theme = clean_theme())
+res9
+```
+
++ p = 0.002 < 0.05，拒絕H0，Genome.Doublings 顯著影響生存函數
+
+
+10. Neoplasm.Histologic.Grade : 腫瘤.組織學.分級，(chr.)
+
+```{r}
+fit.rank10 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Neoplasm.Histologic.Grade, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank10,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 6,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = TRUE,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.013 < 0.05，拒絕H0，Neoplasm.Histologic.Grade 顯著影響生存函數
+
+
+11. HER2.Amplification.Status : 人類表皮生長因子受體2基因放大的狀態，(int.0:正常,1:放大)
+
+```{r}
+fit.rank11 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ HER2.Amplification.Status, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank11,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = TRUE,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.95 > 0.05，不拒絕H0，HER2.Amplification.Status 不顯著影響生存函數
+
+
+12. KRAS.Protein.Coding : KRAS蛋白編碼，(int.0:NO,1:YES)
+
+```{r}
+fit.rank12 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ KRAS.Protein.Coding, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank12,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = TRUE,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.26 > 0.05，不拒絕H0，KRAS.Protein.Coding 不顯著影響生存函數
+
+
+13. MLH1.Methylation : MLH1甲基化，(logi.FALSE,TRUE)
+
+```{r}
+fit.rank13 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ MLH1.Methylation, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank13,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = TRUE,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.023 < 0.05，拒絕H0，MLH1.Methylation 顯著影響生存函數
+
+
+14. MSI.Status : 微衛星不穩定性的狀態，(chr.)
+
+```{r}
+fit.rank14 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ MSI.Status, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank14,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = TRUE,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.11 > 0.05，不拒絕H0，MSI.Status 不顯著影響生存函數
+
+
+15. New.Neoplasm.Event.Post.Initial.Therapy.Indicator : 新的腫瘤。事件.後.初始.治療.指標，(chr,YES/NO)
+
+```{r}
+fit.rank15 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ New.Neoplasm.Event.Post.Initial.Therapy.Indicator, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank15,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = F,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p < 0.0001 < 0.05，拒絕H0，New.Neoplasm.Event.Post.Initial.Therapy.Indicator 顯著影響生存函數
+
+
+16. Person.Neoplasm.Cancer.Status : 人體腫瘤癌症狀態，(chr.TUMOR_FREE/WITH_TUMOR)
+
+```{r}
+fit.rank16 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Person.Neoplasm.Cancer.Status, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank16,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = F,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p < 0.0001 < 0.05，拒絕H0，Person.Neoplasm.Cancer.Status 顯著影響生存函數
+
+
+17. PIK3CA.Protein.Coding : PIK3CA 蛋白質編碼，(int.0:NO,1:YES)
+
+```{r}
+fit.rank17 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ PIK3CA.Protein.Coding, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank17,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.41 > 0.05，不拒絕H0，PIK3CA.Protein.Coding 不顯著影響生存函數
+
+
+18. RHOA.Protein.Coding : RHOA 蛋白質編碼，(int.0:NO,1:YES)
+
+```{r}
+fit.rank18 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ RHOA.Protein.Coding, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank18,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 7,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.82 > 0.05，不拒絕H0，RHOA.Protein.Coding 不顯著影響生存函數
+
+
+19. Surgical.Margin.Resection.Status : 手術邊緣切除狀態，(chr.)
+
+```{r}
+fit.rank19 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Surgical.Margin.Resection.Status, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank19,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = F,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p < 0.0001 < 0.05，拒絕H0，Surgical.Margin.Resection.Status 顯著影響生存函數
+
+
+20. SCC : 鳞状细胞癌，(int.,0:NO,1:YES)
+
+```{r}
+fit.rank20 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ SCC, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank20,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.76 > 0.05，不拒絕H0，SCC 不顯著影響生存函數
+
+
+21. SCNA.Cluster.GEA : 基因組拷貝數異常在胃食道腺癌中的聚類分析，(chr.)
+
+```{r}
+fit.rank21 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ SCNA.Cluster.GEA, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank21,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.64 > 0.05，不拒絕H0，SCNA.Cluster.GEA 不顯著影響生存函數
+
+
+22. Sex : 性別 
+
+```{r}
+fit.rank22 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Sex, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank22,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.017 < 0.05，拒絕H0，Sex 顯著影響生存函數
+
+
+23. TP53.Protein.Coding : TP53 蛋白質編碼，(int.0:NO,1:YES)
+
+```{r}
+fit.rank23 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ TP53.Protein.Coding, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank23,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = T,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p = 0.82 > 0.05，不拒絕H0，TP53.Protein.Coding 不顯著影響生存函數
+
+
+24. Tumor.Stage : 腫瘤階段，(chr.)
+
+```{r}
+fit.rank24 = survfit(Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ Tumor.Stage, data=data4, conf.type="log-log")
+
+ggsurvplot(fit.rank24,
+           pval = TRUE,
+           font.tickslab = 10,
+           font.legend = 5,
+           pval.coord = c(100,0.9),
+           conf.int = FALSE,
+           risk.table = F,
+           fontsize = 4,
+           tables.theme = clean_theme())
+```
+
++ p < 0.0001 < 0.05，拒絕H0，Tumor.Stage 顯著影響生存函數
+
+```{r}
+# arrange_ggsurvplots(list(res, res2),
+#                    ncol=1, nrow=2, 
+#                    risk.table.height = -0.1)
+```
+
+---
+### 24個類別變數中，以下9個變數分不分組對危險函數有顯著差別
+
+3. Country : 國家，(chr.)
+9. Genome.Doublings : 基因體倍增，(int.)
+10. Neoplasm.Histologic.Grade : 腫瘤.組織學.分級，(chr.)
+13. MLH1.Methylation : MLH1甲基化，(logi.FALSE,TRUE)
+15. New.Neoplasm.Event.Post.Initial.Therapy.Indicator" : 新的腫瘤。事件.後.初始.治療.指標，(chr,YES/NO)
+16. Person.Neoplasm.Cancer.Status : 人體腫瘤癌症狀態，(chr.TUMOR_FREE/WITH_TUMOR)
+19. Surgical.Margin.Resection.Status : 手術邊緣切除狀態，(chr.)
+22. Sex : 性別 
+24. Tumor.Stage : 腫瘤階段，(chr.)
+
+## 更新資料變數 : DATA5，559 obs. of  20 variables
+
+```{r}
+data5 = subset(data4,select = -c(ARID1A.Protein.Coding, CDKN2A.Methylation, EBV.Positive, EC,
+                                 Gastric.Classification, GEA.CIN.SMG, GEA.GEJ, HER2.Amplification.Status,
+                                 KRAS.Protein.Coding, MSI.Status, PIK3CA.Protein.Coding, RHOA.Protein.Coding,
+                                 SCC, SCNA.Cluster.GEA, TP53.Protein.Coding))
+
+# 挑選的變數不加引號
+# str(data5) : 559 obs. of  20 variables
+
+data5[data5$Tumor.Stage == "IA", "Tumor.Stage"] = 'I'
+data5[data5$Tumor.Stage == "IB", "Tumor.Stage"] = 'I'
+data5[data5$Tumor.Stage == "IIA", "Tumor.Stage"] = 'II'
+data5[data5$Tumor.Stage == "IIB", "Tumor.Stage"] = 'II'
+data5[data5$Tumor.Stage == "IIIA", "Tumor.Stage"] = 'III'
+data5[data5$Tumor.Stage == 'IIIB', "Tumor.Stage"] = 'III'
+data5[data5$Tumor.Stage == 'IIIC', "Tumor.Stage"] = 'III'
+data5[data5$Tumor.Stage == "IVA", "Tumor.Stage"] = 'IV'
+```
+
+## Cox Proportional Hazard (PH) Model
+
+### Local test
+
+用 local test 看連續變數是否對食道癌生存有顯著影響
+
+### **Wald test**:
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_w=(\hat{\beta^1}-\beta_{10})^T(Var(\hat{\beta^1}))^{-1}(\hat{\beta^1}-\beta_{10})$~$\chi^2_1$
+
++ the rejection region
+$\chi^2_w >\chi^2_{1,0.05}\;or\;p-value<0.05$
+
+1. Absolute.Extract.Ploidy
+2. Absolute.Extract.Purity
+3. Diagnosis.Age
+
+#### **Global**
+
+```{r warning=FALSE}
+### FULL MODEL
+fit.loc1 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ ., data = data5)  
+```
+
+#### **Local**
+
+```{r warning=FALSE}
+### 1. Absolute.Extract.Ploidy
+beta1hat = fit.loc1$coefficients[1]
+beta10 = rep(0,1)
+var11 = fit.loc1$var[1,1]
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+# chiWald
+1-pchisq(chiWald,1) # 0.4105631
+
+
+### 2. Absolute.Extract.Purity
+beta1hat = fit.loc1$coefficients[2]
+beta10 = rep(0,1)
+var11 = fit.loc1$var[2,2]
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+# chiWald
+1-pchisq(chiWald,1) # 0.1194808
+
+
+### 3. Diagnosis.Age
+beta1hat = fit.loc1$coefficients[3]
+beta10 = rep(0,1)
+var11 = fit.loc1$var[3,3]
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+# chiWald
+1-pchisq(chiWald,1) # 0.01779964
+```
+
+#### conclusions
++ pvalue:0.4105631 > 0.05，不拒絕H0，係數顯著為0，Absolute.Extract.Ploidy對食道癌生存沒有顯著影響
+
++ pvalue:0.1194808 > 0.05，不拒絕H0，係數顯著為0，Absolute.Extract.Purity對食道癌生存沒有顯著影響
+
++ pvalue:0.01779964 < 0.05，拒絕H0，係數不顯著為0，年齡對食道癌生存有顯著影響
+
+
+### **Likelihood ratio test**:
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_{LR}=2(LL(Full)-LL(Reduced))$~$\chi^2_{35-34}$
+
++ the rejection region
+$\chi^2_{LR} >\chi^2_{1,0.05}\;or\;p-value<0.05$
+
+
+4. Estimated.Leukocyte.Percentage
++ reduced model(Estimated.Leukocyte.Percentage係數為0)
+
+5. Fraction.Genome.Altered
++ reduced model(Fraction.Genome.Altered係數為0)
+
+6. Mutation.Rate
++ reduced model(Mutation.Rate係數為0)
+
+```{r warning=FALSE}
+### 4. Estimated.Leukocyte.Percentage
+fit.loc1.reduced4 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Estimated.Leukocyte.Percentage, data = data5)
+fit.loc1$loglik             # Full
+fit.loc1.reduced4$loglik    # Reduce
+logLik(fit.loc1)            # df=35
+logLik(fit.loc1.reduced4)   # df=34
+chiLR = 2*(fit.loc1$loglik[2] - fit.loc1.reduced4$loglik[2])
+1-pchisq(chiLR,35-34)       # df:35-34
+
+
+### 5. Fraction.Genome.Altered
+fit.loc1.reduced5 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Fraction.Genome.Altered, data = data5)
+fit.loc1$loglik             # Full
+fit.loc1.reduced5$loglik5   # Reduce
+logLik(fit.loc1)            # df=35
+logLik(fit.loc1.reduced5)   # df=34
+chiLR = 2*(fit.loc1$loglik[2] - fit.loc1.reduced5$loglik[2])
+1-pchisq(chiLR,35-34)       # df:35-34
+
+
+### 6. Mutation.Rate
+fit.loc1.reduced6 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Mutation.Rate, data = data5)
+fit.loc1$loglik             # Full
+fit.loc1.reduced6$loglik    # Reduce
+logLik(fit.loc1)            # df=35
+logLik(fit.loc1.reduced6)   # df=34
+chiLR = 2*(fit.loc1$loglik[2] - fit.loc1.reduced6$loglik[2])
+1-pchisq(chiLR,35-34)       # df:35-34
+```
+
+#### conclusions.
++ p-value:0.0496991 < 0.05，拒絕H0，係數不顯著為0，白血球百分比對食道癌生存有顯著影響
+
++ p-value:0.0483102 < 0.05，拒絕H0，係數不顯著為0，基因組改變比例對食道癌生存有顯著影響
+
++ p-value:0.4504393 > 0.05，不拒絕H0，係數顯著為0，突變率對食道癌生存沒有顯著影響
+
+
+### **Score test**
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_{sc} = (\frac{\partial LL}{\partial\beta^1}(\beta_{10},\hat{\beta^2}(\beta_{10})))^T(Var((\frac{\partial LL}{\partial\beta^1})(\beta_{10},\hat{\beta^2}(\beta_{10}))))^{-1}(\frac{\partial LL}{\partial\beta^1}(\beta_{10},\hat{\beta^2}(\beta_{10})))$~$\chi^2_1$
+
++ the rejection region
+$\chi^2_{sc} >\chi^2_{1,0.05}\;or\;p-value<0.05$
+
+7. Percent.Tumor.Cells
+8. Percent.Tumor.Nuclei
+9. TMB..nonsynonymous.
+
++ under H0 時的係數估計
+
+```{r warning=FALSE}
+### 7. Percent.Tumor.Cells
+fit.loc1.reduced7 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Percent.Tumor.Cells, data = data5)
+fit.loc17 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ .,
+                  data = data5,
+                  init = c(fit.loc1.reduced7$coefficients[1:24],0,fit.loc1.reduced7$coefficients[25:34]), iter=0) 
+### score.vector
+score.vector = colSums(coxph.detail(fit.loc17)$score)
+chiSC = t(score.vector[25])%*%fit.loc17$var[25,25]%*%score.vector[25]
+1-pchisq(chiSC,1) 
+
+
+### 8. Percent.Tumor.Nuclei
+fit.loc1.reduced8 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Percent.Tumor.Nuclei, data = data5)
+fit.loc18 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ .,
+                  data = data5,
+                  init = c(fit.loc1.reduced8$coefficients[1:25],0,fit.loc1.reduced8$coefficients[26:34]), iter=0) 
+### score.vector
+score.vector = colSums(coxph.detail(fit.loc18)$score)
+chiSC = t(score.vector[26])%*%fit.loc18$var[26,26]%*%score.vector[26]
+1-pchisq(chiSC,1) 
+
+
+### 9. TMB..nonsynonymous.
+fit.loc1.reduced9 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - TMB..nonsynonymous., data = data5)
+fit.loc19 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ .,
+                  data = data5,
+                  init = c(fit.loc1.reduced9$coefficients[1:31],0,fit.loc1.reduced9$coefficients[32:34]), iter=0) 
+### score.vector
+score.vector = colSums(coxph.detail(fit.loc19)$score)
+chiSC = t(score.vector[32])%*%fit.loc19$var[32,32]%*%score.vector[32]
+1-pchisq(chiSC,1) 
+```
+
+#### conclusions.
++ p-value:0.7248046 > 0.05，不拒絕H0，係數顯著為0，癌細胞百分比對食道癌生存沒有顯著影響
+
++ p-value:0.7152439 > 0.05，不拒絕H0，係數顯著為0，癌細胞核百分比對食道癌生存沒有顯著影響
+
++ p-value:0.7928437 > 0.05，不拒絕H0，係數顯著為0，腫瘤組織中非同義突變的數量對食道癌生存沒有顯著影響
+
+---
+---
++ **Wald test**:
+
+```{r warning=FALSE}
+fit.loc1 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ ., data = data5)  ### 跟 fit.cox0 一樣
+
+beta1hat = fit.loc1$coefficients[4:15]
+beta10 = rep(0,12)
+
+var11 = fit.loc1$var[4:15,4:15]
+
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+chiWald
+1-pchisq(chiWald,12)
+```
+
++ conclusions
++ pvalue:0.04159029 < 0.05，拒絕H0，係數不顯著為0，不同國家對食道癌生存有顯著影響
+
+---
+
++ **Likelihood ratio test**:
++ reduced model(Genome.Doublings係數為0)
+
+```{r warning=FALSE}
+fit.loc1.reduced = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . - Genome.Doublings, data = data5)
+
+# summary(fit.loc1.reduced)
+```
+
+
+```{r}
+fit.loc1$loglik            # Full
+fit.loc1.reduced$loglik    # Reduce
+
+logLik(fit.loc1)           # df=35
+logLik(fit.loc1.reduced)   # df=34
+
+chiLR = 2*(fit.loc1$loglik[2] - fit.loc1.reduced$loglik[2])
+1-pchisq(chiLR,35-34)      # df:35-34
+```
+
++ conclusions.
++ p-value:0.07834435 > 0.05，不拒絕H0，係數顯著為0，基因體倍增對食道癌生存沒有顯著影響
++ 跟 log rank test 結論不一樣
+---
+---
+
+### 9個連續變數中，只有3個對食道癌的生存有顯著影響
+
+3. Diagnosis.Age
+4. Estimated.Leukocyte.Percentage
+5. Fraction.Genome.Altered
+
+## 更新資料變數(真的最後) : DATA6，559 obs. of  14 variables
+
+```{r}
+data6 = subset(data5, select = -c(Absolute.Extract.Ploidy,
+                                  Absolute.Extract.Purity,
+                                  Mutation.Rate, Percent.Tumor.Cells,
+                                  Percent.Tumor.Nuclei, TMB..nonsynonymous.))
+
+# 挑選的變數不加引號
+# str(data6) : 559 obs. of  14 variables
+data6[data6$New.Neoplasm.Event.Post.Initial.Therapy.Indicator == "NO", "New.Neoplasm.Event.Post.Initial.Therapy.Indicator"] = 0
+data6[data6$New.Neoplasm.Event.Post.Initial.Therapy.Indicator == "YES", "New.Neoplasm.Event.Post.Initial.Therapy.Indicator"] = 1
+data6$New.Neoplasm.Event.Post.Initial.Therapy.Indicator = as.numeric(data6$New.Neoplasm.Event.Post.Initial.Therapy.Indicator)
+data6[data6$Person.Neoplasm.Cancer.Status == "TUMOR_FREE", "Person.Neoplasm.Cancer.Status"] = 0
+data6[data6$Person.Neoplasm.Cancer.Status == "WITH_TUMOR", "Person.Neoplasm.Cancer.Status"] = 1
+data6$Person.Neoplasm.Cancer.Status = as.numeric(data6$Person.Neoplasm.Cancer.Status)
+```
+
+## Cox Proportional Hazard (PH) Model
+
+```{r warning=FALSE}
+fit.cox0 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ ., data = data6)
+
+temp1 = summary(fit.cox0)
+# temp1
+```
+
+### Time Dependent Covariates
+
+### Schoenfeld residuals test
+
++ H0:跟時間無關
+
++ New.Neoplasm.Event.Post.Initial.Therapy.Indicator，p = 5.5e-05 < 0.05，變數跟時間有關
++ Person.Neoplasm.Cancer.Status，p = 9.3e-05 < 0.05，拒絕H0，變數跟時間有關
+
+```{r}
+fit_zph <- cox.zph(fit.cox0)
+fit_zph
+plot(fit_zph[8])
+plot(fit_zph[9])
+```
+
+
+
+```{r warning=FALSE}
+fit.cox1 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . +
+                   tt(New.Neoplasm.Event.Post.Initial.Therapy.Indicator) +
+                   tt(Person.Neoplasm.Cancer.Status),
+                 data = data6,
+                 tt = function(x, t, ...) x * log(t+1))
+
+summary(fit.cox1)
+```
+
+```{r warning=FALSE}
+fit.cox2 = coxph(formula = Surv(Overall.Survival..Months.,Overall.Survival.Status) ~ . +
+                   bs(New.Neoplasm.Event.Post.Initial.Therapy.Indicator) +
+                   bs(Person.Neoplasm.Cancer.Status),
+                 data = data6)
+
+summary(fit.cox2)
+```
+
+```{r warning=FALSE}
+model = step(fit.cox1, trace = F)
+model
+```
+
+### Cox baseline cumulative hazard function
+
+```{r}
+cum_hazard0 <- basehaz(fit.cox0)
+plot(cum_hazard0$time, cum_hazard0$hazard, type="b")
+```
+
+```{r}
+fit_surv0 <- survfit(fit.cox0)            # fit_surv0$cumhaz
+plot(fit_surv0$time, fit_surv0$cumhaz)
+
+plot(fit_surv0)
+```
+
+### baseline hazard function
+
+```{r}
+hazard = data.frame(hazard = c(cum_hazard0$hazard[1],
+                               diff(cum_hazard0$hazard)),
+                    time = cum_hazard0$time)
+hazard
+```
+
+### Cox snell's residual
+
++ [Residual diagnostics in Cox PH model](https://rpubs.com/kaz_yos/resid_cox)
+
+```{r}
+rm = residuals(fit.cox0, "martingale")
+snell = data6$Overall.Survival.Status - rm
+
+## Fit model on Cox-Snell residuals (Approximately Expo(1) distributed under correct model)
+fit_coxsnell <- coxph(formula = Surv(snell, Overall.Survival.Status) ~ 1,
+                      data    = data6,
+                      ties    = c("efron","breslow","exact")[1])
+
+## Nelson-Aalen estimator for baseline hazard (all covariates zero)
+df_base_haz <- basehaz(fit_coxsnell, centered = FALSE)
+```
+
+```{r warning=FALSE}
+ggplot(data = df_base_haz, mapping = aes(x = time, y = hazard)) +
+    geom_point() +
+    scale_x_continuous(limit = c(0,3.5)) +
+    scale_y_continuous(limit = c(0,3.5)) +
+    labs(x = "Cox-Snell residuals as pseudo observed times",
+         y = "Estimated cumulative hazard at pseudo observed times") +
+    theme_bw() + theme(legend.key = element_blank())
+
+```
+
++ 用(snell殘差,$\delta_i$)估計累積風險函數，接近45度線，第一個模型應該就足夠了
+
+### Martingale residual
+
+```{r}
+plot(data6$Diagnosis.Age,rm)
+plot(data6$Estimated.Leukocyte.Percentage,rm)
+plot(data6$Fraction.Genome.Altered,rm)
+plot(data6$Genome.Doublings ,rm)
+plot(data6$MLH1.Methylation ,rm)
+plot(data6$New.Neoplasm.Event.Post.Initial.Therapy.Indicator ,rm)
+plot(data6$Person.Neoplasm.Cancer.Status ,rm)
+```
+
++ 看起來皆沒有特別的趨勢，第一個模型可能就足夠了
+
+## 分析結果、解釋
+
+### 模型
+
+$$h(t|z) = h_0(t)e^{0.017 \times Diagnosis.Age + 0.1501 \times CountryBrazil -0.957 \times CountryCanada  -0.451 \times CountryGermany  -1.567 \times CountryKorea_South -13.087  \times CountryMoldova + 0.864 \times CountryNetherlands +  ...  +  \times  + 0.4635 \times tt(New.Neoplasm.Event.Post.Initial.Therapy.Indicator)  +  0.4638 \times tt(Person.Neoplasm.Cancer.Status)  }$$
+
+### 主要挑有顯著的變數做解釋
+
+|                                                       |coef        |exp(coef)  |se(coef)   |z       |p-value  |
+|:---                                                   |:---:       |:---:      |:---:      |:---:   |:---:    |
+|Diagnosis.Age                                          | 1.711e-02  |1.017e+00  |7.145e-03  |2.394   |0.0167   |
+|Genome.Doublings                                       | 2.701e-01  |1.310e+00  |1.104e-01  |2.445   |0.0145   |
+|Neoplasm.Histologic.GradeGX                            | 1.248e+00  |3.482e+00  |4.944e-01  |2.523   |0.0116   |
+|New.Neoplasm.Event.Post.Initial.Therapy.Indicator      |-1.133e+00  |3.221e-01  |4.760e-01  |-2.380  |0.0173   |
+|Surgical.Margin.Resection.StatusR2                     |1.478e+00   |4.382e+00  |3.503e-01  |4.217   |2.47e-05 |
+|Surgical.Margin.Resection.StatusRX                     |6.301e-01   |1.878e+00  |2.544e-01  |2.477   |0.0133   |
+|Tumor.StageIV                                          |7.562e-01   |2.130e+00  |3.298e-01  |2.293   |0.0218   |
+|tt(New.Neoplasm.Event.Post.Initial.Therapy.Indicator)  |4.635e-01   |1.590e+00  |1.950e-01  |2.377   |0.0175   |
+
++ 診斷年齡每增加一歲，食道癌死亡的風險增加$1.017$倍
+
+
++ 基因體倍增(細胞的染色體數目增加為正常倍數的兩倍)1，食道癌死亡的風險增加$1.310$倍
++ 基因體倍增(細胞的染色體數目增加為正常倍數的四倍)2，食道癌死亡的風險增加$1.310^2$倍
+
+
++ 腫瘤分級GX(無法判斷)比分級G1(輕微)，食道癌死亡的風險增加$3.482$倍
+
+
++ **初次治療後出現新的腫瘤事件比沒事的，食道癌死亡的風險增加$0.3221*t^{1.590}$倍**
++ 當時間越久，t越大，出現事件比沒事的食道癌死亡的風險，$0.3221*t^{1.590}$，越來越大
+
+
++ R0 : 原發腫瘤部位顯微鏡下未見癌細胞
++ R1 : 癌細胞在顯微鏡下出現在原發腫瘤部位
++ R2 : 區域淋巴結處有殘留腫瘤
++ 手術邊緣切除狀態 R2(區域淋巴結處有殘留腫瘤)比 R0，食道癌死亡的風險增加$4.382$倍
++ 手術邊緣切除狀態 RX(無法評估)比 R0，食道癌死亡的風險增加$1.878$倍
+
+
++ 腫瘤階段IV比階段I(輕微)，食道癌死亡的風險增加$2.130$倍
+
+## 總結
+
+資料中有很多基因相關變數，但各基因主要影響的器官不同，<br>
+雖然基因突變容易造成癌症，但能直接影響食道癌的還是需要再進一步分析才能發現
+
+---
+---

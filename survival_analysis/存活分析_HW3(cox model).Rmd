@@ -1,0 +1,653 @@
+---
+title: "存活分析 HW3"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## HW from 125~
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# install.packages('survival')
+# install.packages('KMsurv')
+# install.packages("fastDummies")
+# library(fastDummies)           # dummy variable
+
+library(survival)                # survival function
+library(KMsurv)                  # 資料集
+# install.packages("icenReg") 
+# library(icenReg)               # interval censore regression
+```
+
+```{r}
+data(larynx)
+```
+
+### cox model
+
+```{r}
+Fit = coxph(formula = Surv(time, delta) ~ factor(stage), data = larynx)
+summary(Fit)
+```
+
++ K-M estimate
+
+```{r}
+Fit2 = survfit(formula = Surv(time, delta) ~ factor(stage), data = larynx)
+summary(Fit2)
+plot(Fit2)
+```
+
+### Cox baseline cumulative hazard function
+
+```{r}  
+cum_hazard <- basehaz(Fit)
+plot(cum_hazard$time, cum_hazard$hazard)
+```
+
+## Global
+
+```{r}
+Fit2 = coxph(formula = Surv(time, delta) ~ factor(stage) + age, data = larynx)
+summary(Fit2)
+```
+
+## Local
+
+### Wald test:
+
+```{r}
+Fit2 = coxph(formula = Surv(time, delta) ~ factor(stage) + age, data = larynx)
+
+beta1hat = Fit2$coefficients[1:3]
+beta10 = rep(0,3)
+
+var11 = Fit2$var[1:3,1:3]
+
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+chiWald
+
+1-pchisq(chiWald,3) # pvalue:0.0004566683，拒絕H0，係數不顯著為0
+```
+
+### Likelihood ratio test:
+
++ reduced model(stage係數為0)
+
+```{r}
+Fit.reduced = coxph(Surv(time,delta) ~ age, data=larynx) 
+summary(Fit.reduced)
+```
+
+```{r}
+Fit2$loglik           # Full
+Fit.reduced$loglik    # Reduce
+
+logLik(Fit2)          # df=4
+logLik(Fit.reduced)   # df=1
+
+chiLR = 2*(Fit$loglik[2] - Fit.reduced$loglik[2])
+1-pchisq(chiLR,3)     # p-value:0.003110812，拒絕H0，係數不顯著為0 # df:4-1
+```
+
+### Score test: 
+
++ under H0 時的係數估計
+
+```{r}
+Fit0 = coxph(formula = Surv(time, delta) ~ factor(stage) + age,
+             data = larynx,
+             init = c(0,0,0,Fit.reduced$coefficients), iter=0)
+summary(Fit0)
+```
+
++ score.vector
+
+```{r}
+objects(Fit0)
+Fit0$score
+```
+
+```{r}
+score.vector = colSums(coxph.detail(Fit0)$score)
+score.vector       # -2.457351   3.089920   7.480648   5.386351e-10 
+
+# Fit0$var
+
+chiSC = t(score.vector[1:3])%*%Fit0$var[1:3,1:3]%*%score.vector[1:3]
+1-pchisq(chiSC,3)  # p-value:0.0001063739，拒絕H0，係數不顯著為0
+```
+
+## HW:
+The bfeed data frame has 927 rows and 10 columns.<br>
+Format(格式)<br>
+This data frame contains the following columns:
+
++ Duration : Duration of breast feeding, weeks
++ delta : Indicator of completed breast feeding (1=yes, 0=no)
++ race : Race of mother (1=white, 2=black, 3=other)
++ poverty(貧窮): Mother in poverty (1=yes, 0=no)
++ yschool: Education level of mother (years of school)
+
+
++ Covariates : yschool, poverty, race
++ Time to event random variable : duration of breast feeding
++ Right censoring indicator : delta (0: censored)
+
+Note:<br> 
+Confidence intervals (CI) below are all for 99% CI. Alpha level is 0.05 for all testing.
+
+```{r}
+data(bfeed)
+head(bfeed)
+```
+
+### (1)
+We would like to investigate (調查) how the covariates <br>
+yschool, poverty and race would affect the risk function.
+
++ cox PH model
+
+```{r}
+model = coxph(formula = Surv(duration, delta) ~ yschool + poverty + factor(race), data = bfeed)
+summary(model)
+```
+
++ Write down the model 
+
+|     |white|black|other|
+|:---:|:---:|:---:|:---:|
+|$race2$| 0 | 1  |  0  |
+|$race3$| 0 | 0  |  1  |
+
++ Model
+$$h(t|z) = h_0(t)e^{-0.05103\times yschool+0.8262 \times poverty+1.1413 \times race2 +1.2569 \times race3}$$
+
++ estimate the coefficients (beta)
+
+$$\hat\beta +- Z_{\frac{\alpha}{2}}\times se(\hat\beta)$$
+
+```{r warning=FALSE}
+model$coefficients
+
+z = qnorm(0.995, lower.tail = TRUE)  
+z # 2.575829
+sqrt(model$var)
+```
+
++ 99% confidence intervals
+
+```{r}
+# yschool : -0.05103355
+c(-0.05103355 - z*0.01868233, -0.05103355 + z*0.01868233)
+
+# poverty : -0.19088136 
+c(-0.19088136 - z*0.0922244, -0.19088136 + z*0.0922244)
+
+# race2 : 0.13219468
+c(0.13219468 - z*0.10307376, 0.13219468 + z*0.10307376)
+
+# race3 : 0.22862381
+c(0.22862381 - z*0.09435684, 0.22862381 + z*0.09435684)
+```
+
+```{r}
+rbind(lower_CI = model$coef - z*sqrt(diag(model$var)),
+      upper_CI = model$coef + z*sqrt(diag(model$var)))
+```
+
+### Please explain your results.
+
++ 有 99% 的信心水準各係數會落在各信賴區間內
+
+
++ exp(coef)
+
+1. yschool : 0.95025
+
+全母乳喂養的機率，每多讀一年書多0.95025倍(多兩年多$0.95025^2$倍)
+
+2. poverty : 0.82623 
+
+全母乳喂養的機率，貧窮比不貧窮多0.82623倍
+
+3. race
++ race2 : 1.14133
+
+全母乳喂養的機率，黑人比白人多1.14133倍
+
++ race3 : 1.25687
+
+全母乳喂養的機率，其他人種比白人多1.25687倍
+
+### (2)
+If the mother’s years of school increases one year, how would the risk is changed. 
+
++ yschool:-0.05103355，exp(-0.05103355)=0.9502468
+
+全母乳喂養的機率，每多讀一年書多 0.95025 倍(多兩年多$0.95025^2$倍)
+
+### (3)
+Calculate the RR (relative risk) for mothers in poverty relative to mothers not in poverty. Calculate the CI for the RR.
+
++ poverty:-0.19088136，exp(-0.19088136)=0.82623
+
+全母乳喂養的機率，貧窮比不貧窮多0.82623倍
+
++ relative risk CI
+
+$$P(e^{\hat\beta - Z_{\frac{\alpha}{2}}\times se(\hat\beta)}<e^{\beta}<e^{\hat\beta + Z_{\frac{\alpha}{2}}\times se(\hat\beta)})=0.99$$
+
+
+```{r}
+# poverty : -0.19088136
+relative_risk = exp(-0.19088136)         
+relative_risk                     # 0.8262306
+```
+
+```{r}
+lower_poverty = (model$coef - z*sqrt(diag(model$var)))[2]
+upper_poverty = (model$coef + z*sqrt(diag(model$var)))[2]
+c(exp(lower_poverty), exp(upper_poverty))
+```
+
+### (4)
+Calculate the RR for mothers whose race are black relative to mothers **whose race is white**. Calculate the CI for the RR 
+
+```{r}
+# race2 : 0.13219468
+relative_risk_WB = exp(0.13219468)         
+relative_risk_WB                     # 1.14133
+```
+
++ relative risk CI
+
+```{r}
+lower_race_B = (model$coef - z*sqrt(diag(model$var)))[3]
+upper_race_B = (model$coef + z*sqrt(diag(model$var)))[3]
+c(exp(lower_race_B), exp(upper_race_B))
+```
+
+### (5)
+Estimate the Breslow’s baseline hazard function and plot the estimate of cumulative baseline hazard function.
+
++ [使用 Cox 模型進行預測建模 - 所有關於基線危害](https://missingdatasolutions.rbind.io/2022/12/cox-baseline-hazard/)
+
+### cumulative baseline hazard function
+
+```{r}  
+cum_hazard <- basehaz(model,centered = T) # model$means
+plot(cum_hazard$time, cum_hazard$hazard)
+```
+
+### cumulative baseline hazard function
+
+```{r}
+fit_surv <- survfit(model)            # fit_surv$cumhaz
+plot(fit_surv$time, fit_surv$cumhaz)
+plot(fit_surv)
+
+cum_hazard$hazard == fit_surv$cumhaz
+```
+
+### baseline hazard function
+
+```{r}
+hazard = data.frame(hazard = c(cum_hazard$hazard[1],diff(cum_hazard$hazard)),time = cum_hazard$time)
+hazard
+```
+
+### (6)
+Test whether the race is a significantly important for risk. <br>
+Use Wald test, likelihood ratio test, and the score test. <br>
+You have to write 
+
++ the null hypothesis/alternative hypothesis
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
++ the rejection region
++ your conclusions.
+
+## Local
+
+### Wald test:
+
+```{r}
+### Global
+model = coxph(formula = Surv(duration, delta) ~ yschool + poverty + factor(race), data = bfeed)
+summary(model)
+```
+
+```{r}
+### Local
+beta1hat = model$coefficients[3:4]
+beta10 = rep(0,2)
+
+var11 = model$var[3:4,3:4]
+
+chiWald = t(beta1hat-beta10)%*%solve(var11)%*%(beta1hat-beta10)
+chiWald
+
+1-pchisq(chiWald,2)
+```
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0,0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_w=(\hat{\beta^1}-\beta_{10})^T(Var(\hat{\beta^1}))^{-1}(\hat{\beta^1}-\beta_{10})$~$\chi^2_2$
+
++ the rejection region
+$\chi^2_w >\chi^2_{2,0.05}\;or\;p-value<0.05$
+
++ your conclusions.
++ pvalue:0.0360204 < 0.05，拒絕H0，係數不顯著為0，種族對全母乳喂養有顯著影響
+
+### Likelihood ratio test:
+
++ reduced model(race係數為0)
+
+```{r}
+model.reduced = coxph(formula = Surv(duration, delta) ~ yschool + poverty, data = bfeed)
+summary(model.reduced)
+```
+
+```{r}
+model$loglik            # Full
+model.reduced$loglik    # Reduce
+
+logLik(model)           # df=4
+logLik(model.reduced)   # df=2
+
+chiLR = 2*(model$loglik[2] - model.reduced$loglik[2])
+1-pchisq(chiLR,4-2)     # df:4-2
+```
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0,0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_{LR}=2(LL(Full)-LL(Reduced))$~$\chi^2_{4-2}$
+
++ the rejection region
+$\chi^2_{LR} >\chi^2_{2,0.05}\;or\;p-value<0.05$
+
++ your conclusions.
++ p-value:0.04005433 < 0.05，拒絕H0，係數不顯著為0，種族對全母乳喂養有顯著影響
+
+### Score test: 
+
++ under H0 時的係數估計
+
+```{r}
+model0 = coxph(formula = Surv(duration, delta) ~ yschool + poverty + factor(race),
+               data = bfeed,
+               init = c(model.reduced$coefficients,0,0), iter=0)
+summary(model0)
+```
+
++ score.vector
+
+```{r}
+objects(model0)
+model0$score
+```
+
+```{r}
+score.vector = colSums(coxph.detail(model0)$score)
+score.vector   # 6.004529e-10 -4.278418e-10  8.718373e+00  2.263892e+01 
+
+# model0$var
+
+chiSC = t(score.vector[3:4])%*%model0$var[3:4,3:4]%*%score.vector[3:4]
+1-pchisq(chiSC,2) 
+```
+
+
++ the null hypothesis/alternative hypothesis
+$H_0:\beta^1=\beta_{10}=(0,0)\;vs\;H_a:\beta^1 \neq \beta_{10}$
+
++ the form of the test statistic and its distribution with the corresponding degrees of freedom under Ho
+$under\; H_0\;,\chi^2_{sc} = (\frac{\partial LL}{\partial\beta^1}(\beta_{10},\hat{\beta^2}(\beta_{10})))^T(Var((\frac{\partial LL}{\partial\beta^1})(\beta_{10},\hat{\beta^2}(\beta_{10}))))^{-1}(\frac{\partial LL}{\partial\beta^1}(\beta_{10},\hat{\beta^2}(\beta_{10})))$~$\chi^2_2$
+
++ the rejection region
+$\chi^2_{sc} >\chi^2_{2,0.05}\;or\;p-value<0.05$
+
++ your conclusions.
++ p-value:0.03562763 < 0.05，拒絕H0，係數不顯著為0，種族對全母乳喂養有顯著影響
+
+---
+---
+
+## Time Dependent Covariates
+
++ Survival of patients on the waiting list for the Stanford heart transplant program
+
+```{r}
+data(heart)
+```
+
+```{r}
+Fit_heart = coxph(Surv(start, stop, event) ~ age + transplant +  surgery, data=heart)
+summary(Fit_heart)
+```
+
+```{r}
+Fit_heart_zph <- cox.zph(Fit_heart) # scaled Schoenfeld residuals
+plot(Fit_heart_zph)
+```
+
++ use the Cox model with time-dependent covariates to fix the problem.
+
+```{r}
+data(larynx)
+```
+
+```{r}
+Fit_larynx = coxph(Surv(time,delta) ~ factor(stage) + age, data=larynx)
+summary(Fit_larynx)
+```
+
++ cox.zph : scaled Schoenfeld residuals
+
+```{r}
+larynx_zph <- cox.zph(Fit_larynx) # scaled Schoenfeld residuals
+plot(larynx_zph)
+```
+
+```{r}
+Fit_larynx2 <- coxph(Surv(time,delta) ~ factor(stage) + age + tt(age),
+                     data=larynx, tt=function(x, t, ...) x * log(t))
+summary(Fit_larynx2)
+```
+
++ Recall the marrow transplant data
+
+```{r}
+data(bmt)
+```
+
+```{r}
+Fit = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + z10, data=bmt)
+Fit_zph <- cox.zph(Fit)  ## provide scaled Schoenfeld residuals
+plot(Fit_zph)
+```
+
+```{r}
+Fit1 = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + z10, data=bmt)
+
+cox.zph(Fit1, transform = "log")  # provide scaled Schoenfeld residuals
+plot_bmt = cox.zph(Fit1) 
+plot_bmt
+
+plot(cox.zph(Fit1, transform = "log"))
+plot(plot_bmt)
+```
+
+```{r}
+fit2 <- coxph(Surv(t2, d3) ~ factor(group) + z2 + z10 + tt(z10),
+              data = bmt,
+              tt = function(x, t, ...) x * log(t))
+summary(fit2)
+```
+
++ model:
+
+```{r}
+# install.packages("splines") 
+library('splines')
+fit3 <- coxph(Surv(t2, d3) ~ factor(group) + z2 + bs(z10), data=bmt)
+summary(fit3)
+```
+
++ cox.zph test PH assumption (Shoenfeld residual)
+
+```{r}
+data(cancer)
+```
+
+```{r}
+vfit <- coxph(Surv(time, status) ~ ph.karno + pat.karno + age, cancer)
+zp <- cox.zph(vfit)
+zp
+```
+
+```{r}
+vfit30 <- coxph(Surv(time, status) ~ bs(ph.karno) + age, cancer)
+
+vfit31 <- coxph(Surv(time, status) ~ ph.karno + tt(ph.karno) + age,
+               data = cancer,
+               tt = function(x, t, ...) x * log(t+20))  ## bs(karno)
+```
+
+### veteran
+
++ vfit <- coxph(Surv(time, status) ~ trt + factor(prior) + karno, veteran)
++ vfit
+
+
++ zp <- **cox.zph(vfit, transform = function(time) log(time +20))**
++ zp <- cox.zph(vfit)
++ plot(zp[3])
++ abline(0, 0, col=2)
+
+### Our Model:
++ vfit3 <- coxph(Surv(time, status) ~ trt + factor(prior) + karno + tt(karno), data-veteran, tt=function(x, t, ...) x * log(t+20))
+
+The time dependent coe_cient is estimated to beta(t) = -0.125 + 0.021 * log(t+20)
+
+#### instruction of veteran dataset
++ https://stat.ethz.ch/R-manual/R-devel/library/survival/html/veteran.html
+
+## Stratification (分層)
+
+investigate (調查) the effect of gender (sex) and x (e.g. x=1 for treatment x=0 for control). <br>
+If the variable gender (sex) does not satisfy the PH assumption. 
+
+### Create the simplest test data set
+
+```{r}
+test1 = list(time = c(4,3,1,1,2,2,3),
+             status = c(1,1,1,0,0,1,0),
+             x = c(0,2,1,1,1,0,0),
+             sex = c(0,0,0,0,1,1,1))
+
+Fit_new = coxph(Surv(time, status) ~ x, test1, method = "breslow") # Breslow 
+Fit_new
+```
+
+### cumulative baseline hazard estimator 
+
+```{r}
+ss = survfit(Fit_new)
+plot(ss) 
+plot(ss, fun="cumhaz")  # Breslow's cumulative baseline hazard estimator
+```
+
+### Fit a stratified model
+
+```{r}
+coxph(Surv(time, status) ~ x + strata(sex), test1)
+```
+
+### Stratify on the use of MTX which involves (涉及) fitting distinct baseline hazard rates to the two groups
+
+```{r}
+data(bmt)
+```
+
+```{r}
+Fit = survfit(Surv(t2,d3) ~ z10, data=bmt)
+# Fit = coxph(Surv(t2,d3) ~ z10, data-bmt)
+```
+
++ plot estimated cumulative hazard function 
++ plot K-M estimator
+
+```{r}
+plot(Fit, fun="cumhaz") 
+plot(Fit) 
+```
+
++ test PH assumption value < 0.05.
+
+```{r}
+Fit = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + z10, data=bmt)
+cox.zph(Fit)
+```
+
+```{r}
+Fitl = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + strata(z10), data=bmt)
+Fit1
+```
+
+### Hypothesis
+
+```{r}
+bmtsubset0 = bmt[bmt$z10==0,]
+bmtsubset1 = bmt[bmt$z10==1,] 
+
+Fit_nomtx = coxph(formula = Surv(t2,d3) ~ factor(group) + z2, data=bmtsubset0)
+Fit_mtx = coxph(formula = Surv(t2,d3) ~ factor(group) + z2, data=bmtsubset1)
+
+Fit_nomtx$loglik  # -230.4
+Fit_mtx$loglik    # -82.58
+Fit1$loglik       # -315.91
+
+Chisq = 2*(-82.58406 - 230.4 + 315.91)  # df = 6-3 = 3
+
+# Chisq = -2*(-310.89 + 223.34 + 82.58)
+1 - pchisq(Chisq,3) # 0.11904, 不拒絕, strata model ok
+```
+
+%I(karno * log(time + 20)),
+
+## time-dependent and time-varying Cox Model
++ https://cran.r-project.org/web/packages/survival/vignettes/timedep.pdf
+
+```{r}
+Fitl = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + z10 + I(z10*log(t2)), data=bmt)
+Fitl
+```
+
+```{r}
+# install.packages("splines")
+# library("splines")
+Fit_spline = coxph(formula = Surv(t2,d3) ~ factor(group) + z2 + bs(z10), data=bmt)
+Fit_spline
+```
+
++ time dependent covariate
+
+```{r}
+# library(survival)
+data(heart)
+Fit_heart = coxph(formula = Surv(start, stop, event) ~ age + transplant + surgery, data=heart)
+Fit_heart
+```
+
+---
+---

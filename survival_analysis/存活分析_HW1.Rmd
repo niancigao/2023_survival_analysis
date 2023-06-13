@@ -1,0 +1,207 @@
+---
+title: "存活分析_HW1"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+
+# install.packages('survival')
+# install.packages('KMsurv')
+# install.packages("fastDummies")
+library(survival)                # survival function
+library(KMsurv)                  # 資料集
+
+# library(fastDummies)             # dummy variable
+
+```
+
+### data(bfeed):餵母乳
+
+### Description
+The bfeed data frame has 927 rows and 10 columns.<br>
+
+Format<br>
+This data frame contains the following columns:<br>
+
++ Duration: Duration of breast feeding, weeks<br>
++ delta: Indicator of completed breast feeding (1=yes, 0=no)
++ race: Race of mother (1=white, 2=black, 3=other)
++ poverty(貧窮): Mother in poverty (1=yes, 0=no)
++ yschool: Education level of mother (years of school)
+
+We would like to investigate(調查) the relation <br>
+between duration of breast feeding weeks and several covariates, <br>
+including race of mother (race), whether the mother is in poverty (poverty), <br>
+and mother’s education level (yschool).
+
+```{r}
+data(bfeed)
+head(bfeed)
+```
+
+### Create dummy variable
+
+```{r}
+
+# create 虛擬變量
+z1 <- ifelse (bfeed$race == 2, 1, 0)
+z2 <- ifelse (bfeed$race == 3, 1, 0)
+
+# new data
+bfeed$z1 = z1
+bfeed$z2 = z2
+head(bfeed)
+
+```
+
+
+## (1) 
+Write down the regression model <br>
+(what is the response variable and what are the covariates):<br>
+
++ **$Y_i = ln(X_i) = \alpha + \gamma_1 z_{i1} + \gamma_2 z_{i2} + \gamma_3 z_{i3} + \gamma_4 z_{i4} + \sigma W_i$**
++ response variable: Duration、delta
++ covariates: race、poverty、yschool
+
+
++ Model:
++ $ln(Duration,delta) = \alpha + \gamma_1 z_{i1} + \gamma_2 z_{i2} + \gamma_3 \times poverty + \gamma_4 \times yschool + \sigma W_i$
+
+|     |white|black|other|
+|:---:|:---:|:---:|:---:|
+|$z_{i1}$| 0 | 1  |  0  |
+|$z_{i2}$| 0 | 0  |  1  |
+
+```{r}
+fit = survreg(Surv(duration,delta) ~ z1 + z2 + poverty + yschool, data = bfeed, dist='weibull')
+summary(fit)
+objects(fit)
+```
+
++ Model:
++ $ln(Duration) = 2.2068 -0.1442 \times z_{i1} -0.2605  \times z_{i2} + 0.1914 \times poverty + 0.0510 \times yschool$
+
+## (2) 
+Estimate the regression coefficients <br>
+and its corresponding 95% confidence intervals: <br><br>
+
+Explain the meanings of your coefficient estimates in terms of <br>
+how they change the baseline survival functions.
+
+```{r warning=FALSE}
+z = qnorm(0.975,lower.tail = TRUE)  # 1.959964
+sqrt(fit$var)
+```
+
+### Estimate & 95% confidence intervals
+
+```{r}
+
+# z1: -0.1442
+
+c(-0.1442 + z * 0.10521708, -0.1442 - z * 0.10521708)
+
+# z2: -0.2605
+
+c(-0.2605 + z * 0.09624615, -0.2605 - z * 0.09624615)
+
+# poverty: 0.1914
+c(0.1914 + z * 0.09391336, 0.1914 - z * 0.09391336)
+
+# yschool: 0.0510
+c(0.0510 + z * 0.019158344, 0.0510 - z * 0.019158344)
+
+```
+
+### Explain how they change the baseline survival functions
+
++ z1: -0.1442
++ 95% confidence intervals: (0.06202169, -0.35042169)
+
+當 z1 從 0 變成 1 時(黑人媽媽)，餵母乳持續時間對數的平均將下降 0.1442 單位<br>
+
++ z2: -0.2605
++ 95% confidence intervals: (-0.07186101, -0.44913899)
+
+當 z2 從 0 變成 1 時(其他種族媽媽)，餵母乳持續時間對數的平均將下降 0.2605 單位<br>
+
++ poverty: 0.1914
++ 95% confidence intervals: (0.375466803, 0.007333197)
+
+當 poverty 從 0 變成 1 時(貧窮的媽媽)，餵母乳持續時間對數的平均將上升 0.1914 單位<br>
+
++ yschool: 0.0510
++ 95% confidence intervals: (0.08854966, 0.01345034)
+
+當 yschool 上升 1 單位時(每多讀一年書)，餵母乳持續時間對數的平均將上升 0.0510 單位
+
+---
+
++ **設 significant level = 0.05**
+```{r}
+z = qnorm(0.975,lower.tail = TRUE)  # 1.959964
+```
+
+## (3) 
+Test whether poverty has significant effect on duration of breast feeding.
+
+```{r}
+
+# 藉由信賴區間:(0.375466803, 0.007333197) 可知貧窮對餵母乳時間有顯著影響
+0.1914/0.09391336                        # Z = 2.038049 大於 1.959964，reject H0
+pnorm(0.1914/0.09391336, lower.tail = F) # p-value : 0.02077253 小於 0.05，reject H0
+
+```
+
+## (4) 
+Test whether mother’s education level has significant effect on during of breast feeding.
+
+```{r}
+
+# 藉由信賴區間:(0.08854966, 0.01345034) 可知教育年限對餵母乳時間有顯著影響
+0.0510/0.019158344                        # Z = 2.662025 大於 1.959964，reject H0
+pnorm(0.0510/0.019158344, lower.tail = F) # p-value : 0.0038836 小於 0.05，reject H0
+
+```
+
+## (5)
+Test whether race has significant effect on duration of breast feeding <br>
+(Use the likelihood ratio test)
+
+### reduce model : r1 = r2 = 0
+
+```{r}
+fit2 = survreg(Surv(duration,delta) ~ poverty + yschool, data = bfeed, dist='weibull')
+fit2$loglik  # Loglik(model)= -3403.5 on 2 degrees of freedom
+```
+
+### full model
+
+```{r }
+fit$loglik   # Loglik(model)= -3399.6 on 4 degrees of freedom
+```
+
+### likelihood ratio test 
+
+```{r}
+# 新:-3403.5    H0
+# 原:-3399.626  H1
+
+h0 = -3403.5
+h1 = -3399.626
+
+# 漸進 卡方 4-2
+-2*(h0-h1)
+qchisq(0.95, 4-2)
+
+#  7.748 > 5.991465，拒絕H0，有 95% 顯著水準，種族跟餵母乳時間有關係
+
+```
+
+---
