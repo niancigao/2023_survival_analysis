@@ -1,0 +1,81 @@
+---
+title: "lec2_code"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(TSA)
+```
+
+## ACF 與 PACF
+
+首先，讀入要分析的資料
+
+```{r}
+# 讀入資料
+da=read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-ibm3dx2608.txt",header = T)
+# 取出 IBM 公司的 simple return
+sibm=da[,2]
+```
+
+- acf 和 pacf 是 R 內建函數 
+- 內建函數 acf 會將 $\rho_0=1$ 畫出
+- 讀入 package TSA 能將原本內建的 acf 行數進行覆蓋，成不會將 $\rho_0=1$ 畫出的圖
+
+```{r}
+par(mfrow=c(2,1))
+acf(sibm)
+pacf(sibm)
+```
+
+## Ljung-Box 檢定
+為檢定
+$$H_0: \rho_1=\cdots=\rho_m=0\quad \text{v.s.}\quad H_a: \exists\ i\leq m\ \ni\   \rho_i\neq 0$$
+
+- 檢測時間序列前 $m$ acf 是否為 0
+- 若有自我相關性即表示該序列並非白噪音
+
+```{r}
+# 檢測 m=5 下的 Ljung-Box test 
+# 得到該序列
+Box.test(sibm,lag=5,type="Ljung-Box")
+```
+
+因 p-value> 0.01 檢定接受 IBM 的 simple return 前 5 acf 為 0
+
+## AR 模型 
+讀入資料「美國每季國內生產毛額增長率」資料
+
+```{r}
+gnp=scan("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/dgnp82.txt")
+gnp1=ts(gnp,frequency = 4,start=c(1947,2))
+plot(gnp1)
+```
+
+畫出資料的 ACF 和 PACF
+
+```{r}
+par(mfrow=c(2,1))
+acf(gnp)
+pacf(gnp)
+```
+
+
+- 發現 acf 和 pacf 大於在 0 的信賴區間
+- 建立 AR 模型
+- ar 指令能自動選擇出最佳 ( 使用 AIC 選擇 ) 
+- 建立 ar 模型的殘差畫出 acf 和 pcaf 並進行 Ljung-Box 檢定
+- 顯示建立完 ar 模型後的殘差接受前 10 的 acf 為 0
+```{r}
+m1=ar(gnp,method = 'mle')
+m1$order
+par(mfrow=c(2,1))
+acf(na.omit(m1$resid))
+pacf(na.omit(m1$resid))
+# 配適使用自由度為 3，在做檢定需要將其扣除
+Box.test(na.omit(m1$resid),lag=12,type="Ljung-Box",fitdf = 3)
+```
+
+
+
