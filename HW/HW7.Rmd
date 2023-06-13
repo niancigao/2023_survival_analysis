@@ -1,0 +1,95 @@
+---
+title: "Time Series HW7"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+# require(moments)   # 偏、峰度
+# install.packages("fBasics")
+# library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+
+library(ggplot2)
+
+```
+
+## 2. Consider the following AR(2) models:
+$$(i) Z_t-0.6Z_{t-1}-0.3Z_{t-2}=a_t$$
+
+(b) Plot the $\rho_k$ for k = 0,1,2,...,10
+
+```{r}
+rho_k_2i_a <- c()
+
+for (i in 0:10)
+  rho_k_2i_a <- c(rho_k_2i_a,(1/2+sqrt(39)/14)*((3+sqrt(39))/10)^i+(1/2-sqrt(39)/14)*((3-sqrt(39))/10)^i)
+
+cbind(k=seq(0,10,1), ρk=rho_k_2i_a)
+```
+
+```{r}
+plot(x=seq(0,10,1),
+     y=rho_k_2i_a,
+     type ="h",
+     col="Red",
+     xlab="lag",
+     ylab=expression(rho[k]))
+```
+
+```{r}
+plot(x=seq(0,10,1),
+     y=(ARMAacf(c(0.6,0.3),lag.max=10)),
+     type ="h",
+     col="Red",
+     xlab="lag",
+     ylab=expression(rho[k]))
+```
+
+$$(ii) Z_t-0.8Z_{t-1}+0.5Z_{t-2}=a_t$$
+
+(b) Plot the $\rho_k$ for k = 0,1,2,...,10
+
+```{r}
+rho_k_2ii_a <- c()
+
+for (i in 0:10)
+  rho_k_2ii_a <- c(rho_k_2ii_a, (sqrt(2)/2)^i*(cos(i*acos(2*sqrt(2)/5)))+(2*sqrt(34)/51)*(sqrt(2)/2)^i*sin(i*acos(2*sqrt(2)/5)))
+
+cbind(k=seq(0,10,1), ρk=rho_k_2ii_a)
+```
+
+```{r}
+plot(x=seq(0,10,1),
+     y=(ARMAacf(c(0.8,-0.5),lag.max=10)),
+     type="h",
+     col="Blue",
+     xlab="lag",
+     ylab=expression(rho[k]))
+
+abline(h=0)
+```
+
+## 3.
+Given the AR(2) process:
+$$Z_t = Z_{t-1} -0.25Z_{t-2} + a_{t}$$
+(c) Calculate the value $\rho_k$ for k = 0,1,2,...,10
+
+```{r}
+rho_k_3_c <- c()
+
+for (i in 1:10)
+  rho_k_3_c <- c(rho_k_3_c, (1/2)^i*(1+(3/5)*i))
+
+cbind(k=seq(1,10,1), ρk=rho_k_3_c)
+```
+
+---
+---

@@ -1,0 +1,462 @@
+---
+title: "Time Series HW1"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fBasics")
+library(fBasics)
+```
+
+## 1.
+
+Use the package quantmod of R to download and plot the daily prices<br> 
+for the following stocks from January 01, 2020 to February 10, 2023.<br><br> 
+(1) Apple <br> 
+(2) Intel <br> 
+(3) Microsoft <br> <br> 
+In addition, you must add the main title and axis labels to the time plot. 
+
+```{r }
+# from 正常，to 少一天
+getSymbols("AAPL",from="2020-01-01",to='2023-02-11')
+getSymbols("INTC",from="2020-01-01",to='2023-02-11')
+getSymbols("MSFT",from="2020-01-01",to='2023-02-11')
+```
+
+### 取出 adjust price
+
+```{r}
+AAPL_adjust = AAPL[,6]
+INTC_adjust = INTC[,6]
+MSFT_adjust = MSFT[,6]
+```
+
+### main title and plot
+
+```{r}
+
+plot(AAPL_adjust['2020-01-01/2023-02-10'],main = 'Apple daily prices')
+plot(INTC_adjust['2020-01-01/2023-02-10'],main = 'Intel daily prices')
+plot(MSFT_adjust['2020-01-01/2023-02-10'],main = 'Microsoft daily prices')
+
+```
+
+## 2.
+
+Consider the daily stock returns of American Express (AXP), <br> 
+Caterpillar (CAT), and Starbucks (SBUX) from January 01, 2020 to <br> 
+February 10, 2023. The price data can be obtained by using R package quantmod. 
+
+```{r}
+getSymbols("AXP",from="2020-01-01",to='2023-02-11')
+getSymbols("CAT",from="2020-01-01",to='2023-02-11')
+getSymbols("SBUX",from="2020-01-01",to='2023-02-11')
+```
+
+a. Compute the simple returns in percentages. Compute the sample <br> 
+mean, standard deviation, skewness, excess kurtosis, minimum, <br> 
+and maximum of the percentage simple returns. 
+
+### 取出 adjust price
+
+```{r}
+AXP_adjust = AXP[,6]
+CAT_adjust = CAT[,6]
+SBUX_adjust = SBUX[,6]
+```
+
++ $R_t = e^{r_t}-1$
++ simple returns : $R_t$
++ log returns : $r_t$
+
+### the simple returns in percentages
+
+#### WAY 1
+
+```{r}
+# [exp(Log Return)-1]*100
+
+AXP_simple_returns = 100*(exp(diff(log(AXP_adjust)))-1)
+head(AXP_simple_returns)
+CAT_simple_returns = 100*(exp(diff(log(CAT_adjust)))-1)
+head(CAT_simple_returns)
+SBUX_simple_returns = 100*(exp(diff(log(SBUX_adjust)))-1)
+head(SBUX_simple_returns)
+
+```
+
+#### WAY2
+
+$R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
+
+## **錯:第一項會是NA，位置對不起來**
+## **改:na.omit(diff(AXP.Adjusted)/lag(AXP.Adjusted))**
+
+```{r}
+head(na.omit(diff(AXP_adjust)/lag(AXP_adjust)))  # lag 幫助往前除一天
+```
+
+```{r}
+n = nrow(AXP_adjust)
+
+AXP_simple_returns2 = 100*(diff(AXP_adjust)/AXP_adjust[1:n-1])
+head(AXP_simple_returns2)
+
+CAT_simple_returns2 = 100*(diff(CAT_adjust)/CAT_adjust[1:n-1])
+head(CAT_simple_returns2)
+
+SBUX_simple_returns2 = 100*(diff(SBUX_adjust)/SBUX_adjust[1:n-1])
+head(SBUX_simple_returns2)
+
+```
+
+### sample basicStats of the percentage simple returns.
+
++ 下面用 WAY 2 
++ mean
++ standard deviation
++ skewness
++ excess kurtosis
++ minimum 
++ maximum  
+
+```{r}
+
+# AXP
+basicStats(AXP_simple_returns2)
+mean(AXP_simple_returns2,na.rm=T)           # sample mean
+sqrt(var(AXP_simple_returns2,na.rm=T))      # standard deviation
+skewness(AXP_simple_returns2,na.rm=T)       # skewness
+kurtosis(AXP_simple_returns2,na.rm=T)       # excess kurtosis
+min(AXP_simple_returns2,na.rm=T)            # minimum
+max(AXP_simple_returns2,na.rm=T)            # maximum
+
+# CAT
+basicStats(CAT_simple_returns2)
+mean(CAT_simple_returns2,na.rm=T)           # sample mean
+sqrt(var(CAT_simple_returns2,na.rm=T))      # standard deviation
+skewness(CAT_simple_returns2,na.rm=T)       # skewness
+kurtosis(CAT_simple_returns2,na.rm=T)       # excess kurtosis
+min(CAT_simple_returns2,na.rm=T)            # minimum
+max(CAT_simple_returns2,na.rm=T)            # maximum
+
+# SBUX
+basicStats(SBUX_simple_returns2)
+mean(SBUX_simple_returns2,na.rm=T)           # sample mean
+sqrt(var(SBUX_simple_returns2,na.rm=T))      # standard deviation
+skewness(SBUX_simple_returns2,na.rm=T)       # skewness
+kurtosis(SBUX_simple_returns2,na.rm=T)       # excess kurtosis
+min(SBUX_simple_returns2,na.rm=T)            # minimum
+max(SBUX_simple_returns2,na.rm=T)            # maximum
+
+```
+
+b. Transform the simple returns to log returns. <br> 
+
++ $r_t = ln(\frac{R_t}{100} + 1)\times100$
++ simple returns : $R_t$
++ log returns : $r_t$
+
++ **USE WAY 1**
+
+```{r, warning=FALSE}
+AXP_log_returns = (log((AXP_simple_returns/100) + 1))*100
+head(AXP_log_returns)
+CAT_log_returns = (log((CAT_simple_returns/100) + 1))*100 
+head(CAT_log_returns)
+SBUX_log_returns = (log((SBUX_simple_returns/100) + 1))*100
+head(SBUX_log_returns)
+```
+
++ **USE WAY 2**
+
+```{r, warning=FALSE}
+AXP_log_returns2 = (log((AXP_simple_returns2/100) + 1))*100
+head(AXP_log_returns2)
+CAT_log_returns2 = (log((CAT_simple_returns2/100) + 1))*100 
+head(CAT_log_returns2)
+SBUX_log_returns2 = (log((SBUX_simple_returns2/100) + 1))*100
+head(SBUX_log_returns2)
+```
+
++ **Log Return**
+
+```{r}
+# Log Return
+
+a = 100*((diff(log(AXP_adjust))))
+head(a)
+b = 100*((diff(log(CAT_adjust))))
+head(b)
+c = 100*((diff(log(SBUX_adjust))))
+head(c)
+
+```
+
+c. Express the log returns in percentages. Compute the sample mean, <br> 
+standard deviation, skewness, excess kurtosis, minimum, and <br> 
+maximum of the percentage log returns.
+
++ 下面用 WAY 2 
++ mean
++ standard deviation
++ skewness
++ excess kurtosis
++ minimum 
++ maximum  
+
+```{r}
+
+# AXP
+basicStats(AXP_log_returns2)
+mean(AXP_log_returns2,na.rm=T)           # sample mean
+sqrt(var(AXP_log_returns2,na.rm=T))      # standard deviation
+skewness(AXP_log_returns2,na.rm=T)       # skewness
+kurtosis(AXP_log_returns2,na.rm=T)       # excess kurtosis
+min(AXP_log_returns2,na.rm=T)            # minimum
+max(AXP_log_returns2,na.rm=T)            # maximum
+
+# CAT
+basicStats(CAT_log_returns2)
+mean(CAT_log_returns2,na.rm=T)           # sample mean
+sqrt(var(CAT_log_returns2,na.rm=T))      # standard deviation
+skewness(CAT_log_returns2,na.rm=T)       # skewness
+kurtosis(CAT_log_returns2,na.rm=T)       # excess kurtosis
+min(CAT_log_returns2,na.rm=T)            # minimum
+max(CAT_log_returns2,na.rm=T)            # maximum
+
+# SBUX
+basicStats(SBUX_log_returns2)
+mean(SBUX_log_returns2,na.rm=T)           # sample mean
+sqrt(var(SBUX_log_returns2,na.rm=T))      # standard deviation
+skewness(SBUX_log_returns2,na.rm=T)       # skewness
+kurtosis(SBUX_log_returns2,na.rm=T)       # excess kurtosis
+min(SBUX_log_returns2,na.rm=T)            # minimum
+max(SBUX_log_returns2,na.rm=T)            # maximum
+
+```
+
+## 3. 
+
+Consider the monthly stock returns for General Motors (GM), CRSP <br> 
+value-weighted index (VW), CRSP equalweighted index (EW), and <br> 
+S&P composite index from January 1975 to December 2008. The <br> 
+returns of the indexes include dividend distributions. <br> 
+Data file is m-gm3dx7508.txt (date, gm, vw, ew, sp). 
+
+```{r}
+da = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-gm3dx7508.txt",header = T)
+head(da)
+```
+
+a. Compute the simple returns in percentages. Compute the sample <br> 
+mean, standard deviation, skewness, excess kurtosis, minimum, <br> 
+and maximum of the percentage simple returns.
+
+```{r}
+da = cbind(da[,"date"],(da[,c("gm","vw","ew","sp")])*100)
+names(da)[1] = "data"
+head(da)
+```
+
++ mean
++ standard deviation
++ skewness
++ excess kurtosis
++ minimum 
++ maximum  
+
+```{r}
+
+basicStats(da[,c("gm","vw","ew","sp")])
+
+colMeans(da[,c("gm","vw","ew","sp")])           # sample mean
+apply(da[,-1],2,mean)                           # sample mean
+sqrt(apply(da[,-1],2,var))                      # standard deviation
+apply(da[,-1],2,skewness)                       # skewness
+apply(da[,-1],2,kurtosis)                       # excess kurtosis
+apply(da[,-1],2,min)                            # minimum
+apply(da[,-1],2,max)                            # maximum
+
+```
+
+b. Transform the simple returns to log returns. 
+
+```{r, warning=FALSE}
+
+a = da[,c("gm","vw","ew","sp")]
+log_returns = (log(a/100 + 1))*100
+head(log_returns)
+
+```
+
+c. Express the log returns in percentages. Compute the sample mean, <br> 
+standard deviation, skewness, excess kurtosis, minimum, and <br> 
+maximum of the percentage log returns.<br> 
+
++ mean
++ standard deviation
++ skewness
++ excess kurtosis
++ minimum 
++ maximum  
+
+```{r}
+
+basicStats(log_returns)
+
+colMeans(log_returns[,c("gm","vw","ew","sp")],na.rm=TRUE)      # sample mean
+apply(log_returns,2,mean,na.rm=TRUE)                           # sample mean
+sqrt(apply(log_returns,2,var,na.rm=TRUE))                      # standard deviation
+apply(log_returns,2,skewness,na.rm=TRUE)                       # skewness
+apply(log_returns,2,kurtosis,na.rm=TRUE)                       # excess kurtosis
+apply(log_returns,2,min,na.rm=TRUE)                            # minimum
+apply(log_returns,2,max,na.rm=TRUE)                            # maximum
+
+```
+
+## 4.
+
+Consider the monthly stock returns of S&P composite index from <br> 
+January 1975 to December 2008 in Exercise 3. Answer the following questions: 
+
+```{r}
+newda = da[,c("data",'sp')]
+head(newda)
+```
+
+a. What is the average annual log return over the data span? <br> 
+
++ $R \approx \frac{1}{k} \sum_{j=0}^{k-1}R_{t-j}$
+
+
+## **錯:要準確值，simple return --> log return -->**
+## **calculate average annual log return **
+
+## **改:data.LR_table = basicStats(log(data.SR+1))**
+
+## **改:AR = data.LR_table[c('Mean'),] $\times$ 12**
+
++ $k = 2008-1974 = 34$
++ $P_{t} = P_{t-k} \times e^{r_{t}(k)}$
++ $P_{t} = P_{t-k}\times (e^{r})^{n}$
++ $ln(\frac{P_{t}}{P_{t-k}}) = r \times n$
++ $r = \frac{1}{n}ln(\frac{P_{t}}{P_{t-k}})$
++ $r = \frac{1}{n}(r_t + r_{t-1} + ... + r_{t-k+1})$
+
+```{r}
+sp_log_return = (log(newda$sp/100 + 1))
+# head(knitr:::kable(sp_log_return))
+
+# calculate average annual log return
+(mean(sp_log_return)*12)
+
+# calculate average annual log return
+k = 2008-1974
+sum(sp_log_return)/k
+```
+
+```{r}
+
+k = 2008-1974
+average_annual_return = sum(newda[,"sp"])/k
+average_annual_log_return = (log(average_annual_return/100 + 1))
+average_annual_log_return
+
+```
+
+b. Assume that there were no transaction costs. If one invested $1.00 <br> 
+on the S&P composite index at the beginning of 1975, what was <br> 
+the value of the investment at the end of 2008?
+
++ **改:$P_{t} = P_{t-k}\times (e^{r})^{n}$**
+
+```{r}
+1*exp(k*(sum(sp_log_return)/k))
+```
+
+```{r}
+1*(1+average_annual_return/100)**k
+```
+
+## 5.
+
+Daily foreign exchange rates (spot rates) can be obtained from the <br> 
+Federal Reserve Bank in Chicago. The data are the noon buying rates <br> 
+in New York City certified by the Federal Reserve Bank of New York. <br><br> 
+Consider the exchange rates between the U.S. dollar and <br> 
+the Canadian dollar, euro, U.K. pound, and the Japanese yen <br> 
+from January 4, 2000, to March 27, 2009. The data are also on the Web. <br> 
+(d-caus.txt, d-usuk.txt, d-jpus.txt and d-useu.txt)
+
+```{r}
+
+caus = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-caus.txt",header = T)
+head(caus)
+
+useu = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-useu.txt",header = T)
+head(useu)
+
+usuk = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-usuk.txt",header = T)
+head(usuk)
+
+jpus = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-jpus.txt",header = T)
+head(jpus)
+
+```
+
+a. Compute the daily log return of each exchange rate.
+
++ **Log Return**
+
+```{r}
+# Log Return
+
+caus_log_return = data.frame(((diff(log(caus[,"rate"])))))
+names(caus_log_return) = "caus_log_return"
+head(caus_log_return)
+
+useu_log_return = data.frame(((diff(log(useu[,"Value"])))))
+names(useu_log_return) = "useu_log_return"
+head(useu_log_return)
+
+usuk_log_return = data.frame(((diff(log(usuk[,"value"])))))
+names(usuk_log_return) = "usuk_log_return"
+head(usuk_log_return)
+
+jpus_log_return = data.frame(((diff(log(jpus[,"value"])))))
+names(jpus_log_return) = "jpus_log_return"
+head(jpus_log_return)
+
+```
+
+b. Compute the sample mean, standard deviation, skewness, excess <br> 
+kurtosis, minimum, and maximum of the log returns of each exchange rate
+
+```{r}
+finaldata = cbind(caus_log_return,useu_log_return,usuk_log_return,jpus_log_return)
+head(finaldata)
+```
+
+```{r}
+
+basicStats(finaldata)
+
+apply(finaldata,2,mean,na.rm=TRUE)                           # sample mean
+sqrt(apply(finaldata,2,var,na.rm=TRUE))                      # standard deviation
+apply(finaldata,2,skewness,na.rm=TRUE)                       # skewness
+apply(finaldata,2,kurtosis,na.rm=TRUE)                       # excess kurtosis
+apply(finaldata,2,min,na.rm=TRUE)                            # minimum
+apply(finaldata,2,max,na.rm=TRUE)                            # maximum
+```
+
+---

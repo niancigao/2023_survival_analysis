@@ -1,0 +1,125 @@
+---
+title: "Time Series HW5"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+require(quantmod)  # 股價
+# require(moments)   # 偏、峰度
+# install.packages("fBasics")
+# library(fBasics)
+library(ggplot2)
+
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+```
+
+## 2.
+Using the daily log return of IBM (IBM), Intel (INTC), 3M (MMM), <br> 
+Microsoft (MSFT) and Citi-group (C) from 2020/1/1 to 2023/02/28 to <br>
+calculate and plot the sample ACVF and ACF for lag 1 ∼ 20.
+
+```{r}
+# from 正常，to 少一天
+
+getSymbols("IBM",from="2020-01-01",to='2023-03-01')   ### IBM
+# head(IBM)
+
+getSymbols("INTC",from="2020-01-01",to='2023-03-01')  ### Intel
+# head(INTC)
+
+getSymbols("MMM",from="2020-01-01",to='2023-03-01')   ### 3M
+# head(MMM)
+
+getSymbols("MSFT",from="2020-01-01",to='2023-03-01')  ### Microsoft(微軟)
+# head(MSFT)
+
+getSymbols("C",from="2020-01-01",to='2023-03-01')     ### Citi-group(花旗)
+# head(C)
+
+```
+
+### 取出 adjust price
+
+```{r}
+IBM_adjust = IBM$IBM.Adjusted
+INTC_adjust = INTC$INTC.Adjusted
+MMM_adjust = MMM$MMM.Adjusted
+MSFT_adjust = MSFT$MSFT.Adjusted
+C_adjust = C$C.Adjusted
+```
+
+### Log Return : $r_t = ln(P_t) - ln(P_{t-1})$
+
++ $r_t = ln(R_t + 1)$
++ $r_t = ln(P_t) - ln(P_{t-1})$
+
+```{r}
+IBM_log_return = na.omit(diff(log(IBM_adjust)))
+head(IBM_log_return)
+
+INTC_log_return = na.omit(diff(log(INTC_adjust)))
+head(INTC_log_return)
+
+MMM_log_return = na.omit(diff(log(MMM_adjust)))
+head(MMM_log_return)
+
+MSFT_log_return = na.omit(diff(log(MSFT_adjust)))
+head(MSFT_log_return)
+
+C_log_return = na.omit(diff(log(C_adjust)))
+head(C_log_return)
+```
+
+### calculate and plot the sample ACVF and ACF for lag 1 ∼ 20.
+
+```{r}
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(IBM_log_return, type = "correlation", lag.max = 20, plot = F)
+acf(IBM_log_return, type = "correlation", lag.max = 20, plot = T, main="IBM ACF")
+acf(IBM_log_return, type = "covariance", lag.max = 20, plot = F)
+acf(IBM_log_return, type = "covariance", lag.max = 20, plot = T, main="IBM ACVF")
+```
+
+```{r}
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(INTC_log_return, type = "correlation", lag.max = 20, plot = F)
+acf(INTC_log_return, type = "correlation", lag.max = 20, plot = T, main="INTC ACF")
+acf(INTC_log_return, type = "covariance", lag.max = 20, plot = F)
+acf(INTC_log_return, type = "covariance", lag.max = 20, plot = T, main="INTC ACVF")
+```
+
+```{r}
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(MMM_log_return, type = "correlation", lag.max = 20, plot = F)
+acf(MMM_log_return, type = "correlation", lag.max = 20, plot = T, main="MMM ACF")
+acf(MMM_log_return, type = "covariance", lag.max = 20, plot = F)
+acf(MMM_log_return, type = "covariance", lag.max = 20, plot = T, main="MMM ACVF")
+```
+
+```{r}
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(MSFT_log_return, type = "correlation", lag.max = 20, plot = F)
+acf(MSFT_log_return, type = "correlation", lag.max = 20, plot = T, main="MSFT ACF")
+acf(MSFT_log_return, type = "covariance", lag.max = 20, plot = F)
+acf(MSFT_log_return, type = "covariance", lag.max = 20, plot = T, main="MSFT ACVF")
+```
+
+```{r}
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(C_log_return, type = "correlation", lag.max = 20, plot = F)
+acf(C_log_return, type = "correlation", lag.max = 20, plot = T, main="C ACF")
+acf(C_log_return, type = "covariance", lag.max = 20, plot = F)
+acf(C_log_return, type = "covariance", lag.max = 20, plot = T, main="C ACVF")
+```
+
++ [R 時間序列分析(一)](https://rpubs.com/ivan0628/TimeSeries01)
+
+---
+---

@@ -1,0 +1,128 @@
+---
+title: "Time Series HW14"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+# require(moments)     # 偏、峰度
+# install.packages("rugarch")
+# library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+# library(ggplot2)
+
+# require(sandwich)
+# require(lmtest)
+
+library(fUnitRoots)
+library(TSA)
+library(fGarch)
+library(rugarch)
+```
+
+## 1. Again, consider the returns in m-gmsp5008.txt.
+
+```{r}
+gmsp = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-gmsp5008.txt", header = T)
+head(gmsp)
+```
+
+### (a) 
+Build a Gaussian GARCH model for the monthly log returns of the S&P 500 index.<br> 
+Check the model carefully. 
+
+```{r}
+logrtn_gmsp = log(gmsp$sp + 1)
+```
+
+```{r}
+Box.test(logrtn_gmsp,lag=12, type='Ljung')
+```
+
++ p-value > 0.05,the log return has no serial correlation
+
+```{r}
+at1 = logrtn_gmsp - mean(logrtn_gmsp)
+pacf(at1^2, 40)  # AR 1 or 9
+acf(at1^2, 40)   # MA 1 or 9
+eacf(at1^2)      # ARMA(1,1) or MA1
+```
+
++ $a^2_t$ ~ ARMA(1,1)
+
+```{r}
+# library(fGarch)
+garch1.fit = garchFit(~ garch(1,1), data=logrtn_gmsp, trace=FALSE)
+summary(garch1.fit)
+```
+
++ $a_t $ & $a_t^2$ has no serial correlation and all the coefficients are significant.Thus,the model is adequate.
+
+### WAY2
+
+```{r}
+# library(rugarch)
+
+mean.model = list(armaOrder=c(0,0), include.mean=TRUE)
+variance.model = list(model="sGARCH", garchOrder=c(1,1))
+
+spec = ugarchspec(mean.model=mean.model,
+                  variance.model=variance.model,
+                  distribution.model="norm")
+```
+
++ model fitting
+
+```{r}
+fitmodel1 = ugarchfit(data = logrtn_gmsp, spec = spec)
+fitmodel1
+```
+
+### (b) 
+Is there a summer effect on the volatility of the index return? <br>
+Use the GARCH model built in part (a) to answer this question. 
+
+```{r}
+summer = c(0,0,0,0,0,1,1,1,0,0,0,0)
+summer_eff = rep(summer, 59)
+summer_eff = as.matrix(summer_eff)
+```
+
++ Plug in (插入) the exogenous (外生) variable
+
+```{r}
+spec2 = ugarchspec(mean.model = mean.model,
+                   variance.model = list(model = "sGARCH", garchOrder = c(1,1),
+                                         external.regressors = summer_eff),
+                   distribution.model = "norm")
+fitmodel2 = ugarchfit(data = logrtn_gmsp, spec = spec2)
+fitmodel2
+```
+
++ In the optimal parameter, vxreg1(summer) = 0.000302 (pvalue=0.0104 < 0.05),
++ so there are summer effect in the index garch model.
+
+### (c) 
+Are lagged returns of GM stock useful in modeling the index volatility? <br>
+Again, use the GARCH model of part (a) as a baseline model for comparison.
+
+```{r}
+fitmodel3 = ugarchfit(data = gmsp$gm, spec = spec)
+fitmodel3
+```
+
++ Weighted Ljung-Box Test on Standardized Squared Residuals's pvalue>0.05
++ Weighted ARCH LM Tests's pvalue>0.05
+
++ The lagged returns of GM stock are useful in modeling the index volatility in the garch baseline model.
+
+---
+---
+

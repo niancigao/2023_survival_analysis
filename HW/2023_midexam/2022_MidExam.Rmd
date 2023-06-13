@@ -1,0 +1,153 @@
+---
+title: "Time Series 2022 MidExam"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fUnitRoots")
+library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+library(normtest)
+
+library(TSA)
+library(fUnitRoots)
+# library(ggplot2)
+
+```
+
+## CH3 Code
+
+### 單根檢定(ADF test) p23.
+
++ library(fUnitRoots)
+
+
++ da = read.table(" ", header=T)
++ head(da)
+
+
++ logda = log(da[,4])                     # 價格取對數!!
+
+
++ m1 = ar(diff(logda), method="mle")      # 差分後再找 AR order，也可看PACF決定
++ m1$order                                # m1\$aic 看 aic分數
+
+
++ adfTest(logda, lags=10, type=c("nc","c","ct"), title=NULL, description=NULL)
+
++ ### lags = 多少都可以，用於誤差項校正的最大滯後數 
++ ### 'nc' regression with no intercept (constant) nor time trend
++ ### 'c'  regression with an intercept (constant) but no time trend
++ ### 'ct' regression with an intercept (constant) and a time trend.
++ ### The default is 'c' (看slope，畫time plot，price要記得取對數)
+
+### 季節效應 p48.
+
++ da = read.table(" ", header=T)
++ d1 = da[,2]
++ acf(d1)
++ pacf(d1)
+
+
++ m1 = arima(d1, order=c(1,0,0), seasonal=list(order=c(1,0,1), period=12))
++ m1
+
+
++ tsdiag(m1, gof=36)  # 畫出標準化殘差、殘差的ACF、Ljung–Box檢驗的p值，對於所有滯後到gof
+
+
++ m1 = arima(d1, order=c(1,0,0), seasonal=list(order=c(1,0,1), period=12), include.mean=F)
++ m1                  # 去掉 mean
+
+
++ Box.test(m1$residuals, lag=12)   # check model
+
+#### sarima (季節效應模型) p49.
++ require(astsa)
++ m1 = sarima(d1, p=1, d=0, q=0, P=1, D=0, Q=1, S=12)
++ m1$ttable
+
+### 一月效應 p52.
++ Date_tmp = as.Date(as.character(da$date), "%Y%m%d")
++ month_tem = months(Date_tmp)
++ jan = as.numeric(month_tmp=="一月")
++ m2 = lm(d1~jan)
++ summary(m2)
+
+
++ Box.test(m2$residuals, lag=12)    # P值<0.05，一月跟資料殘差顯著序列相關，模型不夠好
+
+
++ m3 = arima(d1, order=c(1,0,0), seasonal=list(order=c(1,0,1), period=12), xreg=jan)
++ m3
+
+
++ m4 = arima(d1, order=c(1,0,0), seasonal=list(order=c(0,0,1), period=12), xreg=jan, include.mean=F)
++ m4
+
+
++ Box.test(m4$residuals, lag=12)    # P值>0.05，殘差序列不相關，模型足夠
+
+### 回歸模型:兩時間序列間的序列相關 p58.
+
++ r1 = read.table(" ", header=T)[,4]
++ r3 = read.table(" ", header=T)[,4]
++ m1 = lm(r3~r1)
++ summary(m1)
+
++ plot(m1$residuals, type='l')
++ acf(m1$residuals, lag=36)
+
+
++ c1 = diff(r1)
++ c3 = diff(r3)
++ m2 = lm(c3 ~ -1+c1)        # 去掉常數項，差分完不要常數項
++ summary(m2)
+
++ acf(m2$residuals, lag=36)  # 決定MA(1)的地方!!!
+
++ m3 = arima(c3, order=c(0,0,1), xreg=c1, include.mean=F)
++ m3
+
+
++ rsq = (sum(c3^2)-sum(m3$residuals^2))/sum(c3^2)   # R square
++ rsq
+
++ Box.test(m3$residuals, lag=36)  
+
+### Consistent covariance matrix estimation p69.
+
++ ### HC :異質
++ ### HAC:異質 + time series 問題
+
++ require(sandwich)
++ require(lmtest)
++ r1 = read.table("w-gs1yr.txt",header=T)
++ r3 = read.table("w-gs3yr.txt",header=T)
++ c1 = diff(r1$rate)
++ c3 = diff(r3$rate)
++ reg.fit = lm(c3~c1);
++ summary(reg.fit)
+
++ coeftest(reg.fit, vcov=vcovHC(reg.fit, type="HC"))
++ coeftest(reg.fit, vcov=vcovHAC(reg.fit))
+
+---
+
++ ### Below, fit a regression model with time series errors
++ reg.ts = lm(c3[-1] ~ c1[-1] + c3[-length(c3)] + c1[-length(c1)])
++ summary(reg.ts)
+
++ coeftest(reg.ts, vcov=vcovHC(reg.ts,type="HC"))
++ coeftest(reg.ts, vcov=vcovHAC(reg.ts))
+
+---
+---

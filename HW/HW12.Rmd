@@ -1,0 +1,236 @@
+---
+title: "Time Series HW12"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+# require(moments)     # 偏、峰度
+# install.packages("fGarch")
+# library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+
+library(fUnitRoots)
+# library(ggplot2)
+
+# require(sandwich)
+# require(lmtest)
+
+library(TSA)
+library(fGarch)
+
+```
+
+## 1. 
+This problem is concerned with the dynamic (動態) relationship between the <br>
+spot and futures prices of the S&P 500 index. The data file sp5may.dat <br>
+hasthree columns: log(futures price), log(spot price), and cost-of-carry <br>
+(×100). The data were obtained from the Chicago Mercantile <br>
+Exchange for the S&P 500 stock index in May 1993 and its June <br> 
+futures contract. The time interval is 1 minute (intraday). Several <br>
+authors used the data to study index futures arbitrage (套利). Here we focus <br>
+on the first two columns. Let $f_t$ and $s_t$ be the log prices of futures and <br> 
+spot (現貨), respectively. Consider $y_t = f_t-f_{t-1}$ and$ x_t=s_t-s_{t-1}$ Build <br>
+a regression model with time series errors between $\{y_t\}$ and$\{x_t\}$, with <br> 
+$y_t$ being the dependent variable.
+
+```{r}
+sp = read.table('https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/sp5may.dat',header=T)
+head(sp)
+```
+
+```{r}
+ft = sp$lnfuture
+st = sp$lnspot
+yt = diff(ft)
+xt = diff(st)
+
+fit = lm(yt ~ xt)
+summary(fit)
+```
+
+```{r}
+acf(fit$residuals)
+```
+
+```{r}
+Box.test(fit$residuals, lag=12, type = "Ljung-Box")
+```
+
++ p−value < 0.05 has serial correlation(不好)
++ Build a regression model with time series error
+
+```{r}
+eacf(fit$residuals)
+```
+
++ AR=1,MA=1
+
+```{r}
+fu_sp_model = arima(yt, order = c(1,0,1),xreg = xt, include.mean = F)
+fu_sp_model
+```
+
+```{r}
+rbind(fu_sp_model$coef-2*sqrt(diag(fu_sp_model$var.coef)),
+      fu_sp_model$coef+2*sqrt(diag(fu_sp_model$var.coef)))
+```
+
+```{r}
+Box.test(fu_sp_model$residuals, lag=12, type = "Ljung-Box")
+```
+
++ p−value > 0.05 has no serial correlation,(足夠)
++ $y_t = 0.7203 x_t + e_t \;,\; e_t = 0.8204 e_{t−1} + at − 0.9359 a_{t−1}$
+
+## 2. 
+The file m-mrk4608.txt contains monthly simple returns of Merck <br>
+stock from June 1946 to December 2008. The file has two columns <br>
+denoting (表示) date and simple return. Transform the simple returns to log returns.
+
+```{r}
+data_mrk = read.table('https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-mrk4608.txt',header=T)
+head(data_mrk)
+```
+
+```{r}
+logrtn_mrk = log(data_mrk$mrk + 1)
+head(logrtn_mrk)
+```
+
+(a) Is there any evidence of serial correlations in the log returns? Use <br> auto-correlations and 5% significance level to answer the question. If yes, <br> remove the serial correlations. 
+
+```{r}
+Box.test(logrtn_mrk, lag = 12, type = "Ljung")
+pacf(logrtn_mrk)
+acf(logrtn_mrk)
+```
+
++ There are serial correlation of log return of mrk (p-value < 0.05)
+
+```{r warning=FALSE}
+adfTest(logrtn_mrk,lags=12,type=c("c"))  # p-value < 0.05，不做差分
+```
+
+```{r}
+eacf(logrtn_mrk)
+m1 = arima(logrtn_mrk, order=c(2,0,3))
+m1
+```
+
+```{r}
+rbind(m1$coef-2*sqrt(diag(m1$var.coef)),
+      m1$coef+2*sqrt(diag(m1$var.coef)))
+```
+
+```{r}
+m2 = arima(logrtn_mrk,
+           order = c(2,0,3),
+           fixed = c(0,NA,0,NA,0,NA),
+           transform.pars = FALSE)
+m2
+```
+
+```{r}
+Box.test(m2$residuals, lag = 24, type = "Ljung", fitdf = 5-3)
+acf(m2$residuals)
+```
+
++ p−value > 0.05 has no serial correlation,(足夠)
+
+(b) Is there any evidence of ARCH effects in the log returns? Use the residual <br>
+series if there are serial correlations in part (a). Use Ljung–Box statistics for the <br>
+squared returns (or residuals) with 6 and 12 lags of autocorrelations and 5% <br>
+significance level to answer the question.
+
+```{r}
+at = logrtn_mrk - mean(logrtn_mrk)
+Box.test(at^2, lag=6, type="Ljung")
+Box.test(at^2, lag=12, type="Ljung")
+```
+
++ There are ARCH effects in log return residuals with lag 6 and lag 12 in mrk. (p-value < 0.05)
+
+(c) Identify an ARCH model for the data and fit the identified model. Write down the fitted model.
+
+```{r}
+acf(at^2, type="partial")
+```
+
++ ARCH(3) (library(fGarch))
+
+```{r}
+model1=garchFit(logrtn_mrk~garch(3,0), data=logrtn_mrk, trace=F)
+summary(model1)
+```
+
++ $r_t = 0.0120047+a_t\;,\;a_t=\sigma_t\epsilon_t\;,\;\sigma^2_t=0.0040637+0.0296618a_{t-1}^2+0.0695198a_{t-2}^2+0.0841515a_{t-3}^2$
+
+## 3.
+The file m-3m4608.txt contains two columns. They are date and the <br>
+monthly simple return for 3M stock. Transform the returns to log returns.
+
+```{r}
+data_3m = read.table('https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-3m4608.txt',header=T)
+head(data_3m)
+```
+
+```{r}
+logrtn_3m = log(data_3m$rtn + 1)
+head(logrtn_3m)
+```
+
+(a) Is there any evidence of ARCH effects in the log returns? Use Ljung–Box <br>
+statistics with 6 and 12 lags of autocorrelations and 5% significance level to <br>
+answer the question. 
+
+```{r}
+at_2 = logrtn_3m - mean(logrtn_3m)
+Box.test(at_2^2, lag=6, type="Ljung")
+Box.test(at_2^2, lag=12, type="Ljung")
+```
+
++ There are ARCH effects in log return residuals with lag 6 and lag 12 in 3m. (p-value < 0.05)
+
+(b) Use the PACF of the squared returns to identify an ARCH model. What is the fitted model?
+
+```{r}
+acf(at_2^2,type = "partial")
+```
+
++ ARCH(2)
+
+```{r}
+model2 = garchFit(logrtn_3m ~ garch(2,0), data=logrtn_3m, trace=F)
+summary(model2)
+```
+
+(c) There are 755 data points. Refit the model using the first 750 observations and <br>
+use the fitted model to predict the volatilities for t from 751 to 755 (the forecast origin is 750)
+
+```{r}
+data_3m_2 = data_3m[1:750,2]
+logrtn_3m_2 = log(data_3m_2 + 1)
+at_3 = logrtn_3m_2 - mean(logrtn_3m_2)
+pacf(at_3^2)
+```
+
+```{r}
+model3 = garchFit(logrtn_3m_2 ~ garch(2,0), data=logrtn_3m_2, trace=F)
+summary(model3)
+```
+
+```{r}
+forecast = predict(model3, n.ahead = 5)
+forecast
+```
+
+---
+---

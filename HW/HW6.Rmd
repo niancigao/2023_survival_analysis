@@ -1,0 +1,309 @@
+---
+title: "Time Series HW6"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+# require(moments)   # 偏、峰度
+# install.packages("fBasics")
+# library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+
+library(ggplot2)
+
+```
+
+## 2.
+(i) Simulate 100 observations from the following AR(1) process:<br>
+$$Z_t = 0.5 - 0.5Z_{t-1} + \epsilon_{t}$$
+Where $Z_0 = 0$ and $\epsilon_{t} ~i.i.d.~ N(0,0.3)$ <br>
+Compute the sample ACF $\hat\rho_k$ for k=0,1,2,…,10 and PACF $\hat{\phi_{kk}}$ for k=0,1,2,…,10.
+
++ $Z_t = 0.5 - 0.5Z_{t-1} + \epsilon_{t}$
++ $\mu=\frac{\phi_0}{1-\phi_1}=\frac{0.5}{1+0.5}=\frac{1}{3}$
++ $Z_t - \frac{1}{3} = - 0.5(Z_{t-1}-\frac{1}{3}) + \epsilon_{t}$
++ $\dot{Z_t} = - 0.5\dot{Z_{t-1}} + \epsilon_{t}$
++ R中常數項為$\mu$
++ $Z_t = \dot{Z_t}+\mu$
+
+
+### 模擬
+
++ [R 中 Arima.sim() 模型的輸入值是多少？](https://stackoverflow.com/questions/51296915/whats-the-input-value-for-model-in-arima-sim-in-r)
++ [使用指定的非零均值和 AR 係數在 R 中模擬 AR(1) 過程](https://stats.stackexchange.com/questions/305224/simulate-ar1-process-in-r-with-specified-nonzero-mean-and-ar-coefficient)
+
+```{r}
+set.seed(20230331)
+yt = arima.sim(list(order=c(1,0,0), ar=-0.5, sd=sqrt(0.3)), n=100)  # c(1,0,0):AR模型 
+ar1_100 = yt + 1/3
+head(ar1_100)
+```
+
+### Compute the sample ACF and PACF
+
++ $\rho_k = (\phi_1)^k$
++ $\hat{\phi_{kk}} : \phi_{11}=\rho_1=\phi_{1}=-0.5, other = 0$
+
+```{r}
+rho_k = c()
+
+for (i in 0:10)
+ rho_k = c(rho_k,(-0.5)^i)
+
+rho_k                         # ACF
+```
+
+### Compute the sample ACF and PACF
+
+```{r}
+acf(ar1_100, type = "correlation", plot = FALSE,lag.max = 10)  # ACF
+acf(ar1_100, type = "partial", plot = FALSE, lag.max = 10)     # PACF
+```
+
+(ii) Repeating the procedure(程序) of (i) for 1000 times, find the values of <br>
+the mean, variance and covariance of$\hat\rho_1,\hat\rho_2$ and $\hat\rho_3$
+
+### mean, variance and covariance
+
+```{r}
+set.seed(20220328)
+
+M = 1000
+
+rho_1 = rep(0,M);rho_2 = rep(0,M);rho_3 = rep(0,M)
+
+for (i in 1:M){
+  yt_1000 = arima.sim(list(order=c(1,0,0), ar=-0.5, sq=sqrt(0.3)), n=100)  # c(1,0,0):AR模型 
+  ar1_1000 = yt_1000 + 1/3
+  
+  ar100_acf = acf(ar1_1000, type = "correlation", plot = FALSE,lag.max = 3)[[1]]  # ACF
+  rho_1[i] = ar100_acf[2]
+  rho_2[i] = ar100_acf[3]
+  rho_3[i] = ar100_acf[4]
+}
+
+cbind(mean_rho = c(mean(rho_1),mean(rho_2),mean(rho_3)),
+      var_rho = c(var(rho_1),var(rho_2),var(rho_3)))
+
+```
+
+### covariance
+
+```{r}
+rbind(co_rho12 = cov(rho_1,rho_2),
+      co_rho23 = cov(rho_2,rho_3),
+      co_rho13 = cov(rho_1,rho_3))
+```
+
+(iii) Compare the result of (ii) with the Bartlett’s approximation.
+
+from HW5
+
+## 全錯
+
++ $Var(\hat\rho_k) \approx \frac{2}{n}(\phi_1^{2k}-1)(\frac{\phi_1^2}{1-\phi_1^2})$
+
+```{r}
+phi1 = -0.5
+n = 1000
+
+var_approx = function(k){
+  return((2/n)*(phi1^(2*k)-1)*(phi1^2/(1-phi1^2)))
+}
+
+rbind(var_rho_1=var_approx(1),
+      var_rho_2=var_approx(2),
+      var_rho_3=var_approx(3))
+
+```
+
+## 訂正
+
+```{r}
+var_sample_ACF <- function(k,m,n){
+  var_rho_k <- ((1-m^(2*n))*(1+m^2)/(1-m^2)-2*n*m^(2*n))*(1/k)
+  return(var_rho_k)
+}
+
+rbind(var_rho_1=var_sample_ACF(100,-0.5,1),
+      var_rho_2=var_sample_ACF(100,-0.5,2),
+      var_rho_3=var_sample_ACF(100,-0.5,3))
+```
+
++ 隨著 n 越大應該是要越接近的
+
+
++ mean_rho1: -0.4937733 var_rho1: 0.007009579
++ mean_rho2:  0.2347892 var_rho2: 0.012109305
++ mean_rho3: -0.1179250 var_rho3: 0.013892444
+
++ co_rho12: -0.006991068
++ co_rho23: -0.010039551
++ co_rho13:  0.005001310
+
+## 3.
+Simulate a series of 100 observations from each of the following models <br>
+where the $a_t$ is a Gaussian white noise process with $E(a_t)=0$ and $Var(a_t) = 1$:<br>
+
+$$(a) Z_t − 0.5Z_{t-1} = a_t$$
+$$(b) Z_t + 0.98Z_{t-1} = a_t$$
+$$(c) Z_t − 1.3Z_{t-1} + 0.4Z_{t-2} = a_t$$
+$$(d) Z_t − 1.2Z_{t-1} +0.8Z_{t-2} = a_t$$
+For each case, plot the simulated series, and calculate and study its sample ACF<br> $\hat\rho_k$ for k=0,1,2,…,20 and PACF $\hat{\phi_{kk}}$ for k=0,1,2,…,20.
+
+### 模擬(a)
+
+```{r}
+set.seed(20230331)
+yta = arima.sim(list(order=c(1,0,0), ar=0.5, sq=1), n=100)  # c(1,0,0):AR模型 
+ar1_a = yta + 0
+head(ar1_a)
+```
+
+### plot
+
+```{r}
+ts.plot(ar1_a,col="blue")
+```
+
+### Compute the sample ACF and PACF
+
+```{r}
+acf(ar1_a, type = "correlation", plot = FALSE,lag.max = 20)  # ACF
+acf(ar1_a, type = "partial", plot = FALSE, lag.max = 20)     # PACF
+```
+
++ $\rho_k = (\phi_1)^k$
++ $\hat{\phi_{kk}} : \phi_{11}=\rho_1=\phi_{1}=0.5, other = 0$
+
+```{r}
+rho_k_a = c()
+
+for (i in 0:20)
+ rho_k_a = c(rho_k_a,(0.5)^i)
+
+rho_k_a                         # ACF
+```
+
+### 模擬(b)
+
+```{r}
+set.seed(20230331)
+ytb = arima.sim(list(order=c(1,0,0), ar=-0.98, sq=1), n=100)  # c(1,0,0):AR模型 
+ar1_b = ytb + 0
+head(ar1_b)
+```
+
+### plot
+
+```{r}
+ts.plot(ar1_b,col="red")
+```
+
+### Compute the sample ACF and PACF
+
+```{r}
+acf(ar1_b, type = "correlation", plot = FALSE,lag.max = 20)  # ACF
+acf(ar1_b, type = "partial", plot = FALSE, lag.max = 20)     # PACF
+```
+
++ $\rho_k = (\phi_1)^k$
++ $\hat{\phi_{kk}} : \phi_{11}=\rho_1=\phi_{1}=-0.98, other = 0$
+
+```{r}
+rho_k_b = c()
+
+for (i in 0:20)
+ rho_k_b = c(rho_k_b,(-0.98)^i)
+
+rho_k_b                         # ACF
+```
+
+### 模擬(c)
+
+```{r}
+set.seed(20230331)
+ytc = arima.sim(list(order=c(2,0,0), ar=c(1.3,-0.4), sq=1), n=100)  # c(1,0,0):AR模型 
+ar1_c = ytc + 0
+head(ar1_c)
+```
+
+### plot
+
+```{r}
+ts.plot(ar1_c,col="blue")
+```
+
+### Compute the sample ACF and PACF
+
+```{r}
+acf(ar1_c, type = "correlation", plot = FALSE,lag.max = 20)  # ACF
+acf(ar1_c, type = "partial", plot = FALSE, lag.max = 20)     # PACF
+```
++ $AR(2):Z_t=\phi_0+\phi_1Z_{t-1}+\phi_2Z_{t-2}+a_t$
++ $\rho_k = \phi_1\rho_{k-1}+\phi_2\rho_{k-2},k\geq2$
++ $\rho_0=1,\rho_1=\frac{\phi_1}{1-\phi_2}$
++ $\hat{\phi_{kk}} : \phi_{11}=\phi_{1}=1.3,\phi_{22}=\phi_{2}=-0.4, other = 0$
+
++ $\hat\rho_k=\frac{10}{7}(\frac{4}{5})^k - \frac{3}{7}(\frac{1}{2})^k,k=0,1,...$
+
+```{r}
+rho_k_c = c()
+
+for (i in 0:20)
+ rho_k_c =  c(rho_k_c,(10/7)*(0.8)^i+(-3/7)*(0.5)^i)
+
+rho_k_c                         # ACF
+```
+
+### 模擬(d)
+
+```{r}
+set.seed(20230331)
+ytd = arima.sim(list(order=c(2,0,0), ar=c(1.2,-0.8), sq=1), n=100)  # c(1,0,0):AR模型 
+ar1_d = ytd + 0
+head(ar1_d)
+```
+
+### plot
+
+```{r}
+ts.plot(ar1_d,col="red")
+```
+
+### Compute the sample ACF and PACF
+
+```{r}
+acf(ar1_d, type = "correlation", plot = FALSE,lag.max = 20)  # ACF
+acf(ar1_d, type = "partial", plot = FALSE, lag.max = 20)     # PACF
+```
+
++ $AR(2):Z_t=\phi_0+\phi_1Z_{t-1}+\phi_2Z_{t-2}+a_t$
++ $\rho_k = \phi_1\rho_{k-1}+\phi_2\rho_{k-2},k\geq2$
++ $\rho_0=1,\rho_1=\frac{\phi_1}{1-\phi_2}$
++ $\hat{\phi_{kk}} : \phi_{11}=\phi_{1}=1.2,\phi_{22}=\phi_{2}=-0.8, other = 0$
+
+```{r}
+rho_k_d <- c()
+
+d = (2/3-3/5)/sqrt(4/5)*sin(acos(3*sqrt(5)/10))
+
+for (i in 0:20){
+   rho_k_d <- c(rho_k_d,(2*sqrt(5)/5)^i*(cos(i*acos(3*sqrt(5)/10)))+d*(2*sqrt(5)/5)
+^i*sin(i*acos(3*sqrt(5)/10)))
+}
+
+rho_k_d
+
+```
+
+---
+---

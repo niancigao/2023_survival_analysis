@@ -1,0 +1,358 @@
+---
+title: "Time Series HW10"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fUnitRoots")
+library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+library(normtest)
+
+library(TSA)
+library(fUnitRoots)
+# library(ggplot2)
+
+```
+
+## 1.
+Consider the demand (需求) of electricity of a manufacturing sector (部門) <br>
+in the United States. The data are logged (紀錄), denote the demand of a <br>
+fixed day of each month, and are in power6.txt. <br> 
+Build an ARIMA time series model for the series and <br>
+use the fitted model to produce 1- to 24-stepahead forecasts
+
+### 電力需求對數
+
+```{r}
+data1 = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/power6.txt", header=F)
+head(data1)
+```
+
+```{r}
+# plot(1:nrow(data1),data1$V1)
+data1 = ts(data1)
+plot(data1)
+acf(data1)
+```
+
+```{r  message=FALSE, warning=FALSE}
+adfTest(data1,lags=24,type=c("ct"))
+```
+
+### ARIMA
+
+```{r}
+m=ar(diff(data1[,1] ), method="mle")
+m$order
+```
+
+```{r}
+estmodel1 = arima(data1,order=c(12,1,0))
+estmodel1
+```
+
+```{r}
+rbind(estmodel1$coef-2*sqrt(diag(estmodel1$var.coef)),estmodel1$coef+2*sqrt(diag(estmodel1$var.coef)))
+```
+
++ ar2
++ ar3
++ ar6
++ ar10
++ ar11
+
+```{r}
+estmodel2 = arima(data1,
+                  order=c(12,1,0),
+                  fixed=c(NA,0,0,NA,NA,0,NA,NA,NA,0,0,NA),
+                  transform.pars = FALSE)
+estmodel2
+```
+
+```{r}
+Box.test(estmodel2$residuals, lag=24, type="Ljung", fitdf=12-5)
+```
+
+```{r}
+estmodel3 = arima(data1,
+                  order=c(12,1,0),
+                  seasonal = list(order=c(1,1,1), period=12),
+                  method="ML")
+estmodel3
+```
+
+```{r}
+Box.test(estmodel3$residuals, lag=24, type="Ljung")
+```
+
+```{r}
+# par(mfrow=c(3,1),mar=c(4,4,4,1)) # 邊:下左上右
+plot(estmodel1$residuals)
+plot(estmodel2$residuals)
+plot(estmodel3$residuals)
+```
+
+```{r}
+knitr::include_graphics("C:/Users/user/Desktop/time_series/seasonal_diff.jpg")
+```
+
+```{r}
+residual = estmodel1$residuals
+sea_diff = diff(residual,lag=12)
+acf(sea_diff, lag.max = 36)
+```
+
+```{r}
+residual = estmodel2$residuals
+sea_diff = diff(residual,lag=12)
+acf(sea_diff, lag.max = 36)
+```
+
+```{r}
+residual = estmodel3$residuals
+sea_diff = diff(residual,lag=12)
+acf(sea_diff, lag.max = 36)
+```
+
+```{r}
+forecast = predict(estmodel3,n.ahead=24)
+forecast$pred
+```
+
+## 2. 
+Consider the monthly Aaa bond yields of the prior problem(Assignment 8 (4)). <br> 
+Build an ARIMA time series model for the series.
+
+### Aaa 
+
+```{r}
+Aaa = read.table("C:/Users/user/Desktop/time_series/HW/w-Aaa.txt",header = F)
+head(Aaa)
+```
+
+```{r}
+plot(ts(Aaa$V4))
+acf(Aaa$V4)
+```
+
+```{r  message=FALSE, warning=FALSE}
+adfTest(Aaa$V4,lags=24,type=c("c"))
+adfTest(diff(Aaa$V4),lags=24,type=c("c"))
+```
+
+### ARIMA
+
+```{r}
+plot(ts(diff(Aaa$V4)))
+```
+
+```{r}
+a = eacf(diff(Aaa$V4))
+a
+```
+
+### 取 AR(1) MA(7)
+
+```{r}
+model = arima(Aaa$V4,order=c(1,1,7))
+model
+```
+
+```{r}
+Box.test(model$residuals, lag=12, type="Ljung")
+```
+
+```{r}
+rbind(model$coef-2*sqrt(diag(model$var.coef)),model$coef+2*sqrt(diag(model$var.coef)))
+```
+
+```{r}
+model2 = arima(Aaa$V4,order=c(1,1,7),
+               fixed=c(0,0,0,NA,0,NA,0,0),
+               transform.pars = FALSE)
+model2
+```
+
+```{r}
+Box.test(model2$residuals, lag=12, type="Ljung",fitdf=8-6)
+```
+
+```{r}
+plot(model$residuals)
+plot(model2$residuals)
+```
+
++ 還是取 ARIMA(1,1,7) model
+
+## 3.
+The quarterly gross domestic product implicit price deflator is often <br>
+(季度國內生產總值隱含物價平減指數常被用作衡量通貨膨脹的指標。) <br>
+used as a measure of inflation. The file q-gdpdef.txt contains the data <br>
+for the United States from the first quarter of 1947 to the last quarter <br>
+of 2008. Data format is year, month, day, and deflator. The data are <br>
+seasonally adjusted and equal to 100 for year 2000. Build an ARIMA <br>
+model for the series and check the validity of the fitted model. Use the <br> 
+fitted model to predict the inflation for each quarter of 2009. The data <br>
+are obtained from the Federal Reserve Bank of St Louis.
+
+### 季度GDP隱含物價平減指數
+
+```{r}
+gdpdata = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/q-gdpdef.txt", header=T)
+head(gdpdata)
+```
+
+```{r  message=FALSE, warning=FALSE}
+adfTest(gdpdata$gdpdef,lags=12,type=c("c"))
+adfTest(diff(gdpdata$gdpdef),lags=12,type=c("c"))
+adfTest(diff(diff(gdpdata$gdpdef)),lags=12,type=c("c"))
+```
+
+```{r}
+plot(ts(gdpdata$gdpdef))
+plot(diff(ts(gdpdata$gdpdef)))
+plot(diff(diff(ts(gdpdata$gdpdef))))
+```
+
+### 構建 ARIMA 系列的模型並檢查擬合模型的有效性
+
+```{r}
+eacf(diff(diff(gdpdata$gdpdef)),ar.max=15,ma.max=15)
+```
+
+```{r}
+m1 = arima(gdpdata$gdpdef, order=c(2,2,4))
+m1
+Box.test(m1$residuals,lag=12,type="Ljung")
+plot(m1$residuals)
+```
+
+```{r}
+rbind(m1$coef-2*sqrt(diag(m1$var.coef)),m1$coef+2*sqrt(diag(m1$var.coef)))
+```
+
+```{r}
+m2 = arima(gdpdata$gdpdef,
+           order=c(2,2,4),
+           fixed=c(NA,0,NA,NA,0,NA),
+           transform.pars=F)
+m2
+Box.test(m2$residuals,lag=12,type="Ljung",fitdf=6-2)
+plot(m2$residuals)
+```
+
++ 雖然 p-value 下降，但還是大於 0.05
++ m2 AIC 小，選m2
+
+### 擬合模型來預測 2009 年每個季度的通貨膨脹
+
+```{r}
+forecast = predict(m2,n.ahead=4)
+forecast$pred
+```
+
+## 4. 
+Consider the daily simple returns of IBM stock, CRSP value-weighted <br>
+index, CRSP equal-weighted index, and the S&P composite index <br>
+from January 1980 to December 2008. The index returns include <br>
+dividend distributions. The data file is d-ibm3dxwkdays8008.txt, <br>
+which has 12 columns. The columns are (year, month, day, IBM, VW, <br>
+EW, SP, M, T, W, H, F), where M, T, W, R, and F denotes indicator <br>
+variables for Monday to Friday, respectively. Use a regression model <br>
+to study the effects of trading days on the equal-weighted index returns. <br> 
+What is the fitted model? Are the weekday effects significant in the <br>
+returns at the 5% level?
+
+### the daily simple returns
+
+```{r}
+data4 = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-ibm3dxwkdays8008.txt", header=T)
+head(data4)
+```
+
+### What is the fitted model? 
+
+```{r}
+ml = lm(ew ~ M+T+W+R+F, data=data4)
+summary(ml)
+step(ml)
+```
+
+```{r}
+ml2 = lm(ew ~ M+T+W+F+R, data=data4)
+summary(ml2)
+step(ml2)
+```
+
+```{r}
+ml3 = lm(ew ~ M+T+F+R+W, data=data4)
+summary(ml3)
+step(ml3)
+```
+
+```{r}
+ml4 = lm(ew ~ M+W+F+R+T, data=data4)
+summary(ml4)
+step(ml4)
+```
+
+```{r}
+ml5 = lm(ew ~ T+W+F+R+M, data=data4)
+summary(ml5)
+step(ml5)
+```
+
++ AIC 最低的模型:lm(formula = ew ~ M + T + F, data = data4)
+
+```{r}
+best = lm(formula = ew ~ M + T + F, data = data4)
+summary(best)
+```
+
+### Are the weekday effects significant in the returns at the 5% level?
+
++ 星期一、二、五在上面每個模型中，p-value 均小於0.05，故這幾天顯著影響報酬率
++ 但其實大部分的模型每天對報酬率都有顯著影響，AIC間也變化不大
+
+## 5. 
+Now consider similar questions of the previous exercise for the IBM <br>
+stock returns.(d-ibm3dxwkdays8008.txt) <br>
+(a) Is there any weekday effect on the daily simple returns of IBM stock? <br>
+Estimate your model and test the hypothesis that there is no Friday effect. <br> 
+Draw your conclusion. <br> 
+
+```{r}
+ibm = lm(ibm ~ M + T + W + R + F ,data=data4)
+summary(ibm)
+```
+
++ model:$R_t = -0.0005902 + 0.0025896M + 0.0020296T + 0.0002289W + 0.0006073R$
++ 星期一和星期二在不考慮星期五影響下 p-value < 0.05，顯著影響報酬率
+
+```{r}
+c = step(ibm)
+c
+```
+
++ best model:$R_t = -0.0003112 + 0.0023106M + 0.0017506T$
+
+(b) Are there serial correlations in the residuals? <br>
+Use Q(12) to perform the test.Draw your conclusion
+
+```{r}
+Box.test(c$residuals,lag=12,type='Ljung')
+```
+
++ NO，因為 p-value > 0.05，不拒絕 H0 (無序列相關)
+
+---
+---

@@ -1,0 +1,355 @@
+---
+title: "Time Series HW8"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fBasics")
+library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+library(normtest)
+
+library(ggplot2)
+
+```
+
+## 1.
+
+$$(a) Z_t=a_t$$
+
++ (i) Simulate 100 observations from the following process: <br>
+Where $a_{t} ~ WN(0,1)$ <br>
+Compute the sample ACF of {$Z_t$},i.e,$\hat\rho_k$ for k=1,2,3 
+
+### 模擬
+
+```{r}
+set.seed(20230414)
+WN_sim <- arima.sim(list(order=c(0,0,0), sq=sqrt(1)), n=100)
+acf(WN_sim, type="correlation", plot=FALSE, lag.max=3)
+```
+
++ (ii) Repeating (i) for 1000 times to find the values of <br>
+the mean, variance and covariance of$\hat\rho_1,\hat\rho_2$ and $\hat\rho_3$
+
+
+### mean, variance and covariance
+
+```{r}
+set.seed(20230414)
+
+M = 1000
+
+rho_1 = rep(0,M);rho_2 = rep(0,M);rho_3 = rep(0,M)
+
+for (i in 1:M){
+  WN_sim = arima.sim(list(order=c(0,0,0), sq=sqrt(1)), n=100)
+  ar100_acf = acf(WN_sim, type="correlation", plot=FALSE, lag.max=3)[[1]]  # ACF
+  rho_1[i] = ar100_acf[2]
+  rho_2[i] = ar100_acf[3]
+  rho_3[i] = ar100_acf[4]
+}
+
+cbind(mean_rho = c(mean(rho_1),mean(rho_2),mean(rho_3)),
+      var_rho = c(var(rho_1),var(rho_2),var(rho_3)))
+
+```
+
+### covariance
+
+```{r}
+rbind(co_rho12 = cov(rho_1,rho_2),
+      co_rho23 = cov(rho_2,rho_3),
+      co_rho13 = cov(rho_1,rho_3))
+```
+
++ (iii) Compare the result of (ii) with the Bartlett’s formula.(p35,36)
+
+$$\because White \; noise \; Var(\hatρ_k) ≈ \frac{1}{n}$$
+$$\therefore Var(\hatρ_1) = Var(\hatρ_2) = Var(\hatρ_3) ≈ 0.01$$
+$$White \; noise \; process,each\;ρi, ρj \; for \;i ≠ j \;are\; approximately \;uncorrelated$$
+$$∴ Cov(\hatρ_1, \hatρ_2) = Cov(\hatρ_1, \hatρ_3) = Cov(\hatρ_2, \hatρ_3) ≈ 0$$
+
++ 結果都跟(ii)差不多
+
+$$(b) Z_t=a_t-1.5a_{t-1}$$
+
++ (i) Simulate 100 observations from the following process: <br>
+Where $a_{t} ~ WN(0,1)$ <br>
+Compute the sample ACF of {$Z_t$},i.e,$\hat\rho_k$ for k=1,2,3 
+
+### 模擬
+
+```{r}
+set.seed(20230414)
+WN_sim2 = arima.sim(model = list(order=c(0,0,1), ma=c(-1.5)),
+                    sd = sqrt(1),
+                    n = 100)
+acf(WN_sim2, type="correlation", plot=FALSE, lag.max=3)
+```
+
++ (ii) Repeating (i) for 1000 times to find the values of <br>
+the mean, variance and covariance of$\hat\rho_1,\hat\rho_2$ and $\hat\rho_3$
+
+### mean, variance and covariance
+
+```{r}
+set.seed(20230414)
+
+M = 1000
+
+rho_1 = rep(0,M);rho_2 = rep(0,M);rho_3 = rep(0,M)
+
+for (i in 1:M){
+  WN_sim2 = arima.sim(model = list(order=c(0,0,1), ma=c(-1.5)),
+                      sd = sqrt(1), n = 100)
+  ar100_acf = acf(WN_sim2, type="correlation", plot=FALSE, lag.max=3)[[1]]  # ACF
+  rho_1[i] = ar100_acf[2]
+  rho_2[i] = ar100_acf[3]
+  rho_3[i] = ar100_acf[4]
+}
+
+cbind(mean_rho = c(mean(rho_1),mean(rho_2),mean(rho_3)),
+      var_rho = c(var(rho_1),var(rho_2),var(rho_3)))
+
+```
+
+### covariance
+
+```{r}
+rbind(co_rho12 = cov(rho_1,rho_2),
+      co_rho23 = cov(rho_2,rho_3),
+      co_rho13 = cov(rho_1,rho_3))
+```
+
++ (iii) Compare the result of (ii) with the Bartlett’s formula.
++ 紙上
+
+## 3.
+Consider the monthly U.S. unemployment rate from January 1948 to <br>
+March 2009 in the file m-unrate.txt. The data are seasonally adjusted <br> 
+and obtained from the Federal Reserve Bank of St Louis. Build an AR <br>
+time series model for the series and use the model to forecast the <br>
+unemployment rate for the April, May, June, and July of 2009. In <br>
+addition, does the fitted model imply the existence of business cycles? <br> 
+Why? (Note that there are more than one model fits the data well. You <br>
+only need an adequate model.)
+
+### the monthly U.S. unemployment rate
+
+```{r}
+unrate = read.table('https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-unrate.txt',header = T)
+head(unrate)
+```
+
+### Build an AR time series model (You only need an adequate model.)
+
+1. **找P**
+
+```{r}
+m1 = ar(unrate$Rate, aic=TRUE, method='mle')
+m1$order
+
+m11 = arima(unrate$Rate, order=c(11,0,0))
+m11
+```
+
+2. **刪不重要的係數**
+
++ ar3 : -0.17896726,0.03084811
++ ar4 : -0.16791970,0.04196004
++ ar5 : -0.07516071,0.13542866
++ ar7 : -0.14788610,0.06262882
++ ar8 : -0.05139841,0.15921055
++ ar9 : -0.11978259,0.09062277
+
+```{r}
+Box.test(m11$residuals, lag=20, type="Ljung-Box", fitdf=11) # reject no residual serial correlation
+rbind(m11$coef-2*sqrt(diag(m11$var.coef)),m11$coef+2*sqrt(diag(m11$var.coef)))
+```
+
+3. **新 MODEL**
+
+```{r warning=FALSE}
+new_m11 = arima(unrate$Rate, order=c(11,0,0), fixed=c(NA,NA,0,0,0,NA,0,0,0,NA,NA,NA))
+new_m11
+
+Box.test(new_m11$residuals, lag=20, type="Ljung-Box", fitdf=11-6) # reject no residual serial correlation，但 p-value 有上升
+1-pchisq(32.716,20-5)  # p-value:0.005137207
+```
+
+### forecast the unemployment rate for the April, May, June, and July of 2009.
+
+4. **預測**
+
+```{r}
+predict(new_m11, n.ahead = 4)$pred
+```
+
+### does the fitted model imply the existence of business cycles? Why?
+
+```{r}
+ts_unrate = ts(unrate$Rate, frequency=12, start=c(1948,1))
+plot(ts_unrate,type="l",col="blue")
+
+par(mfrow=c(1,2),mar=c(4,4,4,1)) # 邊:下左上右
+acf(unrate$Rate, type = "correlation", col="Red", main="ACF")
+acf(unrate$Rate, type = "partial", col="Red", main="PACF")
+```
+
+```{r}
+pl = c(1,-new_m11$coef[1:11])             # 特徵方程式，mean為[12]
+roots = polyroot(pl)                      # 找解
+cbind(roots=roots, Mod_roots=Mod(roots))  # 每個根的長度
+```
+
+### AR(11) business cycles
+
+```{r}
+knitr::include_graphics("C:/Users/user/Desktop/time_series/AR(11)_business_cycle.jpg")
+```
+
+```{r warning=FALSE}
+k = 2*pi/acos(Re(roots[1]/Mod(roots)[1]))
+k # AR(2) : 6.379253
+```
+
+```{r}
+k = 2*pi/acos((sum(roots)/prod(roots)^(1/11)))
+k # AR(11) : 9.438663
+```
+
++ Yes,因為特徵方程式的根含有虛數
++ And the Business cycles of the fitted model is about 9.5 months.
+
+## 4.
+Consider the weekly yields(產量) of Moody’s Aaa and Baa seasoned bonds <br>
+from January 5, 1962, to April 10, 2009. The data are obtained from <br>
+the Federal Reserve Bank of St Louis. Weekly yields are averages of <br>
+daily yields. Obtain the summary statistics (sample mean, standard <br>
+deviation, skewness, excess kurtosis, minimum, and maximum) of the <br>
+two yield series. Are the bond yields skewed? Do they have heavy tails? <br>
+Answer the questions using 5% significance level
+
+### weekly yields(產量) of Moody’s Aaa and Baa seasoned bonds
+
+```{r}
+Aaa = read.table("C:/Users/user/Desktop/time_series/HW/w-Aaa.txt",header = F)
+head(Aaa)
+Baa = read.table("C:/Users/user/Desktop/time_series/HW/w-Baa.txt",header = F)
+head(Baa)
+```
+
+### the summary statistics 
+
++ sample mean
++ standard deviation
++ skewness
++ excess kurtosis
++ minimum
++ maximum
+
+```{r}
+basicStats(Aaa$V4)             # Aaa
+
+mean(Aaa$V4,na.rm=T)           # sample mean
+sqrt(var(Aaa$V4,na.rm=T))      # standard deviation
+skewness(Aaa$V4,na.rm=T)       # skewness
+kurtosis(Aaa$V4,na.rm=T)       # excess kurtosis
+min(Aaa$V4,na.rm=T)            # minimum
+max(Aaa$V4,na.rm=T)            # maximum
+
+basicStats(Baa$V4)             # Baa
+
+mean(Baa$V4,na.rm=T)           # sample mean
+sqrt(var(Baa$V4,na.rm=T))      # standard deviation
+skewness(Baa$V4,na.rm=T)       # skewness
+kurtosis(Baa$V4,na.rm=T)       # excess kurtosis
+min(Baa$V4,na.rm=T)            # minimum
+max(Baa$V4,na.rm=T)            # maximum
+```
+
+### skewed?
+
+### skewness is zero test 
+
+```{r}
+skaaa = skewness(Aaa$V4, na.rm=TRUE)  # Aaa:0.857092
+# Compute test statistic
+t = nrow(Aaa)                         # 2467 # sum(is.na(Aaa$V4)) : 0
+tl = skaaa/sqrt(6/t)                  # 17.37946
+# Compute p-value
+pv = 2*(1 - pnorm(tl,lower.tail = TRUE)) 
+pv                                    # 0
+
+skbaa = skewness(Baa$V4, na.rm=TRUE)  # Baa:0.9297785
+# Compute test statistic
+t = nrow(Baa)                         # 2467 # sum(is.na(Baa$V4)) : 0
+tl = skbaa/sqrt(6/t)                  # 18.85335
+# Compute p-value
+pv = 2*(1 - pnorm(tl,lower.tail = TRUE)) 
+pv                                    # 0
+```
+
++ p-value = 0 < 0.05，
+reject H0，skewness of the Aaa yield series is not zero
+
++ p-value = 0 < 0.05，
+reject H0，skewness of the Baa yield series is not zero
+
++ 都右偏(Aaa:0.857092/Baa:0.9297785)
+
+### skewness.norm.test
+
+```{r}
+skewness.norm.test(Aaa$V4)  # Aaa:0.857092 # p-value < 2.2e-16，reject H0
+skewness.norm.test(Baa$V4)  # Baa:0.929779 # p-value < 2.2e-16，reject H0
+```
+
+### have heavy tails?
+
+### kurtosis is zero test
+
+```{r}
+Aaa_ku = kurtosis(Aaa$V4, na.rm=TRUE)  # Aaa:0.5786054
+# Compute test statistic
+k = nrow(Aaa)                          # 2467 # sum(is.na(Aaa$V4)) : 0
+kl = (Aaa_ku)/sqrt(24/k)               # 5.866262
+# Compute p-value
+pv = 2*(1-pnorm(kl,lower.tail = TRUE)) 
+pv                                     # 4.457306e-09
+
+Baa_ku = kurtosis(Baa$V4, na.rm=TRUE)  # Baa:0.760896
+# Compute test statistic
+k = nrow(Baa)                          # 2467 # sum(is.na(Baa$V4)) : 0
+kl = (Baa_ku)/sqrt(24/k)               # 7.714438
+# Compute p-value
+pv = 2*(1-pnorm(kl,lower.tail = TRUE)) 
+pv                                     # 1.221245e-14
+```
+
++ p-value = 4.457306e-09 < 0.05，
+reject H0，kurtosis of the Aaa yield series is not 3
+
++ p-value = 1.221245e-14 < 0.05，
+reject H0，kurtosis of the Baa yield series is not 3
+
++ 都厚尾(Aaa:0.5786054/# Baa:0.760896)
+
+### kurtosis.norm.test
+
+```{r}
+kurtosis.norm.test(Aaa$V4)  # Aaa:0.578605,p-value < 2.2e-16,reject H0
+kurtosis.norm.test(Baa$V4)  # Baa:0.760896,p-value < 2.2e-16,reject H0
+```
+
+---
+---

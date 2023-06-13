@@ -1,0 +1,250 @@
+---
+title: "Time Series midterm exam"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fUnitRoots")
+library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+library(normtest)
+
+library(TSA)
+library(fUnitRoots)
+# library(ggplot2)
+
+```
+
+## 1.
+
++ 2022/1/3 ~ 2022/12/30
++ 初始 100
++ aapl 0.3
++ intc 0.5
++ msft 0.2
+
++ 2023/1/3 to 2023/3/31
++ aapl 0.2
++ intc 0.2
++ msft 0.6
+
+```{r}
+data_1 = read.csv("C:/Users/user/Desktop/time_series/HW/2023_midexam/data_1.csv",header=T)
+head(data_1)
+
+AAPL_return = dailyReturn(ts(data_1[,2]))
+INTC_return = dailyReturn(ts(data_1[,3])) 
+MSFT_return = dailyReturn(ts(data_1[,4]))
+
+return_data = data.frame(AAPL_return, INTC_return, MSFT_return)
+
+rownames(return_data) = as.Date(data_1[,1], format = "%Y-%m-%d")
+colnames(return_data) = c('AAPL', 'INTC', 'MSFT')
+```
+
+(a) What is the 4-period log-return of the portfolio from 2022-04-25 to 2022-04-29 ?
+
+```{r}
+portfolio_data = data.frame(data_1[1:251,1]) 
+portfolio_data[, 2] = data_1[1:251,2]/data_1[1,2]*30 
+portfolio_data[, 3] = data_1[1:251,3]/data_1[1,3]*50
+portfolio_data[, 4] = data_1[1:251,4]/data_1[1,4]*20 
+portfolio_data[, 5] = portfolio_data[,2] + portfolio_data[,3] + portfolio_data[4] 
+
+colnames(portfolio_data) = c('date', 'AAPL', 'INTC', 'MSFT', 'value')
+log(portfolio_data[82,5]) - log(portfolio_data[78,5])
+
+## -0.05043428
+```
+
+```{r}
+a_data = return_data[79:82,]
+
+log((prod(a_data[,1]+1)-1)*0.3 + (prod(a_data[,2]+1)-1)*0.5 + (prod (a_data[,3]+1)-1)*0.2 +1)
+
+## -0.05001056
+```
+
+(b) What is the average daily simple return of the portfolio from 2022-04-01 to 2022-04-29 ?
+
+```{r}
+b_data = return_data[63:82,]
+
+(prod (b_data[,1]*0.3 + b_data[,2]*0.5 + b_data[,3]*0.2 + 1))^(1/length(b_data[,1]))-1
+
+## -0.005738161
+```
+
+```{r}
+(portfolio_data[82,5]/portfolio_data[63,5])^(1/length (b_data[,1]))-1
+
+## -0.005048979
+```
+
+(c) What is the cumulative simple return of the portfolio from 2022/1/3 to 2022/12/30 ?
+
+```{r}
+c_data = return_data[2:251,] 
+prod((c_data[,1])*0.3 + (c_data[,2])*0.5 + (c_data[,3])*0.2 + 1) - 1
+
+## -0.3829065
+```
+
+```{r}
+portfolio_data[251,5]/portfolio_data[1,5]-1
+
+## -0.38176
+```
+
+(d) What is the cumulative log return of the portfolio from 2022/1/3 to 2023/3/31 ?
+
+```{r}
+portfolio_data_2 = data.frame(data_1[252:313,1])
+
+portfolio_data_2[, 2] = data_1[252:313,2]/data_1[252,2]*portfolio_data[251,5]*0.2 
+portfolio_data_2[, 3] = data_1[252:313,3]/data_1[252,3]*portfolio_data[251,5] *0.2
+portfolio_data_2[, 4] = data_1[252:313,4]/data_1[252,4] *portfolio_data[251,5]*0.6
+
+portfolio_data_2[, 5] = portfolio_data_2[,2] + portfolio_data_2[,3] + portfolio_data_2[, 4]
+
+log((portfolio_data[251,5]/portfolio_data[1,5])*(portfolio_data_2[62, 5]/portfolio_data_2[1,5]))
+
+## -0.2695324
+```
+
+```{r}
+d_data = return_data[252:313,]
+
+c_return = prod((c_data[,1])*0.3 + (c_data[,2])*0.5 + (c_data[,3])*0.2 + 1)* prod((d_data[,1])*0.2 + (d_data[,2])*0.2 + (d_data[,3])*0.6 +1)
+          
+log(c_return)  
+## -0.2744475
+```
+
+## 2.
+
+```{r}
+data_2 = read.csv("C:/Users/user/Desktop/time_series/HW/2023_midexam/data_2.csv",header=T)
+head(data_2)
+```
+
+(a) Build a regression model using ten_years_rate as the dependent variable and three_years_rate as independent variable.
+Perform the goodness of fit test on the residuals of the fitted model. 
+
+```{r}
+m1 = lm(ten_years_rate~three_years_rate,data=data_2)
+summary(m1)
+```
+
+```{r}
+plot(m1$residuals)
+acf(m1$residuals)
+Box.test(m1$residuals,lag=12)
+```
+ 
++ p value<0.05，拒絕H0，序列相關，該模型不夠，(不好)
+
+(b) Build a regression model using the first difference of ten_years_rate as the dependent variable and the first difference of three_years_rate as independent 
+variable. Perform the goodness of fit test on the residuals of the fitted regression model. 
+
+```{r}
+c10 = diff(data_2$ten_years_rate)
+c3 = diff(data_2$three_years_rate)
+
+m2 = lm(c10~c3,data=data_2)
+summary(m2)
+```
+
+```{r}
+plot(m2$residuals)
+acf(m2$residuals)
+Box.test(m2$residuals,lag=12)
+```
+
++ p value<0.05，拒絕H0，序列相關，該模型不夠，(不好)
+
+(c) Build a regression with time series error model using the first difference of ten_years_rate as the dependent variable and the first difference of three_years_rate as independent variable. 
+Perform the goodness of fit test on the residuals of the fitted regression model
+
++ 由ACF圖考慮error為MA(5)
+
+```{r}
+estmodel1 = arima(c10,order = c(0,0,5),xreg = c3,include.mean = F)
+estmodel1
+```
+
+```{r}
+rbind(estmodel1$coef-2*sqrt(diag(estmodel1$var.coef)),estmodel1$coef+2*sqrt(diag(estmodel1$var.coef)))
+```
+
++ 移掉 ma3 ma4
+
+```{r}
+m3 = arima(c10,
+           order = c(0,0,5),
+           fixed = c(NA,NA,0,0,NA,NA),
+           xreg = c3,
+           include.mean = F)
+m3
+```
+
+```{r}
+plot(m3$residuals)
+acf(m3$residuals)
+Box.test(m3$residuals,lag=12, fitdf=5-2)
+```
+
++ p value>0.05，不拒絕H0，序列不相關，該模型似乎足夠
+
+(d) Based on the results of (a), (b) and (c), which model would you suggest to use ? 
+Justify your answer
+
++ In conclusion, I suggest to use model (c). Although the R-squared of (c) is smaller than (a)，(跟(b)差不多), the acf residual of model (c) has no serial correlation
+
+```{r}
+rsq = (sum(c10^2)-sum(m3$residuals^2))/sum(c10^2)   # R square
+rsq #  0.5861534
+```
+
+(e) Set $X_t = ten\_years\_rate_t − three\_years\_rate_t$. <br>
+Build a time series model for $X_t$ and check it goodness of fit test on the residuals.
+
+```{r warning=FALSE}
+x_t = data_2$ten_years_rate - data_2$three_years_rate
+adfTest(x_t, lags = 12,type="c")
+adfTest(diff(x_t), lags = 12,type="c")
+eacf(diff(x_t))
+```
+
++ p value>0.05，不拒絕H0，ϕ1等於一，(有單根，要做差分)
+
++ 考慮ARIMA(1,1,1)
+
+```{r}
+e_model = arima(x_t, order = c(1,1,1), method="ML")
+e_model
+```
+
+```{r}
+rbind(e_model$coef-2*sqrt(diag(e_model$var.coef)),
+      e_model$coef+2*sqrt(diag(e_model$var.coef)))
+```
+
+```{r}
+plot(e_model$residuals)
+acf(e_model$residuals)
+Box.test(e_model$residuals, lag=7, type='Ljung-Box', fitdf=2)
+```
+
++ p value>0.05，不拒絕H0，序列不相關，該模型似乎足夠
+
+---
+---

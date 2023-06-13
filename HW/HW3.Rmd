@@ -1,0 +1,342 @@
+---
+title: "Time Series HW3"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fBasics")
+library(fBasics)
+library(ggplot2)
+
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+```
+
+## 1.
+
+Consider the daily stock returns of Apple from January 2020 to <br>
+February 2023. The price data can be obtained by using R package quantmod.
+
+```{r}
+# from 正常，to 少一天
+getSymbols("AAPL",from="2020-01-01",to='2023-03-01')
+head(AAPL)
+```
+
+### 取出 adjust price
+
+```{r}
+AAPL_adjust = AAPL$AAPL.Adjusted
+```
+
+a. Compute the sample mean, standard deviation, <br>
+skewness and excess kurtosis of the log returns $r_{t}$.
+
++ $r_t = ln(R_t + 1)$
++ $r_t = ln(P_t) - ln(P_{t-1})$
+
+### Log Return : $r_t = ln(P_t) - ln(P_{t-1})$
+
+```{r}
+AAPL_log_return = diff(log(AAPL_adjust))
+head(AAPL_log_return)
+```
+
++ sample mean
++ standard deviation
++ skewness
++ excess kurtosis
+
+```{r}
+basicStats(AAPL_log_return)
+
+mean(AAPL_log_return,na.rm=T)      # 0.0008773567
+sqrt(var(AAPL_log_return,na.rm=T)) # 0.02296092
+skewness(AAPL_log_return,na.rm=T)  # -0.1262185
+kurtosis(AAPL_log_return,na.rm=T)  # 4.122718
+```
+
+b. Estimate the mean and standard deviation of the simple return $R_{t}$ by <br> 
+assuming the log returns $r_{t}$ follow a normal distribution $r_{t}$ ~ $N(\mu, \sigma^2)$.
+
++ $R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
++ $R_t = e^{r_t}-1$
+
++ $r_{t}$ ~ $N(\mu_{r_{t}}, \sigma_{r_{t}}^2)$，then $e^{r_t}$ ~ $lognormal(\mu_{r_{t}}, \sigma_{r_{t}}^2)$
+
++ $E(e^{r_t}) = e^{\mu_{r_{t}} + \frac{\sigma_{r_{t}}^2}{2}}$
++ $E(e^{r_t}-1) = E(R_t) = e^{\mu_{r_{t}} + \frac{\sigma_{r_{t}}^2}{2}} -1$
+
++ $Var(e^{r_t}) = e^{2\mu + \sigma^2}[e^{\sigma^2}-1]$
++ $Var(e^{r_t}) = Var(e^{r_t}-1) = Var(R_t)$ 
+
+```{r}
+mu = mean(AAPL_log_return,na.rm=T) # 0.0008773567
+va = var(AAPL_log_return,na.rm=T)  # 0.000527204
+
+# mean of the simple return
+mean_R_t = exp(mu+va/2) - 1
+mean_R_t                           # 0.00114161
+
+# standard deviation of the simple return
+sd_R_t = sqrt(exp(2*mu+va)*(exp(va)-1))
+sd_R_t                             # 0.02299017
+
+```
+
+c. Compute the sample mean and the sample standard deviation of the simple <br>
+return $R_{t}$. Compare the results of (b) and (c).
+
++ $R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
++ $R_t = e^{r_t}-1$
+
+### simple return
+
+```{r}
+AAPL_simple_return = exp(AAPL_log_return) - 1
+head(AAPL_simple_return)
+```
+
+```{r}
+AAPL_simple_return2 = diff(AAPL_adjust)/lag(AAPL_adjust)  # lag 幫助往前除一天
+head(AAPL_simple_return2)
+```
+
+### the sample mean and the sample standard deviation
+
+```{r}
+mean(AAPL_simple_return, na.rm = T)       # 0.00114107
+sqrt(var(AAPL_simple_return, na.rm = T))  # 0.02297127
+```
+
+<br>
+
+### Estimate
++ mean_R_t = 0.00114161
++ sd_R_t   = 0.02299017
+
+### Compute
++ mean     = 0.00114107
++ sd       = 0.02297127
+
+
++ **兩者結果幾乎一樣，$r_{t}$ 可能真的符合常態假設**
+
+<br>
+
+
+d. Find the kernel density estimator and normal density estimator <br>
+for the log return $r_t$ and the simple return $R_{t}$ respectively. <br>
+Compare the empirical kernel density and normal density for $r_t$ and $R_{t}$ <br>
+Plot the two estimated densities on the same graph.<br>
+(see Page 21 Figure 1.4 in the textbook) 
+
+### the log return
+
+```{r}
+
+ggplot(na.omit(AAPL_log_return),aes(x=AAPL.Adjusted)) +
+  geom_density(color = "blue",linewidth=1) + 
+  geom_vline(aes(xintercept = mu),color="black",linetype="dashed",linewidth=0.1) +
+  theme_bw() + 
+  labs(title="log return of Apple",x="Log return",y="Density")+
+  stat_function(fun = dnorm, args = list(mu, sqrt(va)),
+                colour = "red",linewidth=0.6,linetype="dashed") 
+
+```
+
+### the simple return
+
+```{r}
+
+ggplot(na.omit(AAPL_simple_return),aes(x=AAPL.Adjusted)) +
+  geom_density(color = "blue",linewidth=1) + 
+  geom_vline(aes(xintercept = mean_R_t),color="black",linetype="dashed",linewidth=0.1) +
+  theme_bw() + 
+  labs(title="Simple return of Apple",x="Simple return",y="Density")+
+  stat_function(fun = dnorm, args = list(mean_R_t, sd_R_t),
+                colour = "red",linewidth=0.6,linetype="dashed")
+
+```
+
+### Compare the empirical kernel density and normal density for $r_t$ and $R_{t}$
+
+常態假設對 APPLE 股票的日回報是有問題的。<br>
+經驗密度函數在其均值附近有一個更高的峰值，<br>
+但尾部比相應的正態分佈更厚。<br>
+
++ **In other words, the empirical density function is taller and skinnier**
++ **but with a wider support than the corresponding normal density**
+
+<br>
+
+---
+
+## 2.
+
+Consider the daily stock returns of Taiwan Semiconductor <br>
+Manufacturing from January 2020 to February 2023. <br>
+The price data can be obtained by using R package quantmod.
+
+```{r}
+# from 正常，to 少一天
+getSymbols("TSM",from="2020-01-01",to='2023-03-01')
+head(TSM)
+```
+
+### 取出 adjust price
+
+```{r}
+TSM_adjust = TSM$TSM.Adjusted
+```
+
+a. Compute the sample mean, standard deviation, <br>
+skewness and excess kurtosis of the log returns $r_t$.
+
++ $r_t = ln(R_t + 1)$
++ $r_t = ln(P_t) - ln(P_{t-1})$
+
+### Log Return : $r_t = ln(P_t) - ln(P_{t-1})$
+
+```{r}
+TSM_log_return = diff(log(TSM_adjust))
+head(TSM_log_return)
+```
+
++ sample mean
++ standard deviation
++ skewness
++ excess kurtosis
+
+```{r}
+basicStats(TSM_log_return)
+
+mean(TSM_log_return,na.rm=T)      # 0.0005480166
+sqrt(var(TSM_log_return,na.rm=T)) # 0.02505303
+skewness(TSM_log_return,na.rm=T)  # 0.05838448
+kurtosis(TSM_log_return,na.rm=T)  # 2.890411
+```
+
+b. Estimate the mean and standard deviation of the simple return $R_t$ by <br>
+assuming the log returns $r_t$ follow a normal distribution $r_{t} ~ N(\mu, \sigma^2)$.
+
++ $R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
++ $R_t = e^{r_t}-1$
+
++ $r_{t} ~ N(\mu_{r_{t}}, \sigma_{r_{t}}^2)$，then $e^{r_t} ~ lognormal(\mu_{r_{t}}, \sigma_{r_{t}}^2)$
+
++ $E(e^{r_t}) = e^{\mu_{r_{t}} + \frac{\sigma_{r_{t}}^2}{2}}$
++ $E(e^{r_t}-1) = E(R_t) = e^{\mu_{r_{t}} + \frac{\sigma_{r_{t}}^2}{2}} -1$
+
++ $Var(e^{r_t}) = e^{2\mu + \sigma^2}[e^{\sigma^2}-1]$
++ $Var(e^{r_t}) = Var(e^{r_t}-1) = Var(R_t)$ 
+
+```{r}
+mu2 = mean(TSM_log_return,na.rm=T) # 0.0005480166
+va2 = var(TSM_log_return,na.rm=T)  # 0.0006276544
+
+# mean of the simple return
+mean_R_t2 = exp(mu2+va2/2) - 1
+mean_R_t2                           # 0.0008622153
+
+# standard deviation of the simple return
+sd_R_t2 = sqrt(exp(2*mu2+va2)*(exp(va2)-1))
+sd_R_t2                             # 0.02507857
+
+```
+
+c. Compute the sample mean and the sample standard deviation of the simple <br>
+return $R_{t}$. Compare the results of (b) and (c).
+
++ $R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
++ $R_t = e^{r_t}-1$
+
+### simple return
+
+```{r}
+TSM_simple_return = exp(TSM_log_return) - 1
+head(TSM_simple_return)
+```
+
+```{r}
+TSM_simple_return2 = diff(TSM_adjust)/lag(TSM_adjust)  # lag 幫助往前除一天
+head(TSM_simple_return2)
+```
+
+### the sample mean and the sample standard deviation
+
+```{r}
+mean(TSM_simple_return, na.rm = T)       # 0.00086202
+sqrt(var(TSM_simple_return, na.rm = T))  # 0.02510999
+```
+
+<br>
+
+### Estimate
++ mean_R_t2 = 0.0008622153
++ sd_R_t2   = 0.02507857
+
+### Compute
++ mean      = 0.00086202
++ sd        = 0.02510999
+
+
++ **兩者結果幾乎一樣，$r_{t}$ 可能真的符合常態假設**
+
+<br>
+
+d. Find the kernel density estimator and normal density estimator <br>
+for the log return $r_t$ and the simple return $R_{t}$ respectively. <br>
+Compare the empirical kernel density and normal density for $r_t$ and $R_{t}$ <br>
+Plot the two estimated densities on the same graph.<br>
+(see Page 21 Figure 1.4 in the textbook) 
+
+### the log return
+
+```{r}
+
+ggplot(na.omit(TSM_log_return),aes(x=TSM.Adjusted)) +
+  geom_density(color = "blue",linewidth=1) + 
+  geom_vline(aes(xintercept = mu2),color="black",linetype="dashed",linewidth=0.1) +
+  theme_bw() + 
+  labs(title="log return of TSM",x="Log return",y="Density")+
+  stat_function(fun = dnorm, args = list(mu2, sqrt(va2)),
+                colour = "red",linewidth=0.6,linetype="dashed") 
+
+```
+
+### the simple return
+
+```{r}
+
+ggplot(na.omit(TSM_simple_return),aes(x=TSM.Adjusted)) +
+  geom_density(color = "blue",linewidth=1) + 
+  geom_vline(aes(xintercept = mean_R_t2),color="black",linetype="dashed",linewidth=0.1) +
+  theme_bw() + 
+  labs(title="Simple return of TSM",x="Simple return",y="Density")+
+  stat_function(fun = dnorm, args = list(mean_R_t2, sd_R_t2),
+                colour = "red",linewidth=0.6,linetype="dashed")
+
+```
+
+### Compare the empirical kernel density and normal density for $r_t$ and $R_{t}$
+
+常態假設對 TSM 股票的日回報是有問題的。<br>
+經驗密度函數在其均值附近有一個更高的峰值，<br>
+但尾部比相應的正態分佈更厚。<br>
+
++ **In other words, the empirical density function is taller and skinnier**
++ **but with a wider support than the corresponding normal density**
+
+<br>
+
+---
+---

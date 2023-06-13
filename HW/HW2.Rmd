@@ -1,0 +1,393 @@
+---
+title: "Time Series HW2"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+require(quantmod)  # 股價
+require(moments)   # 偏、峰度
+# install.packages("fBasics")
+library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+library(normtest)
+```
+
+## 1.
+
+Consider the daily stock returns of American Express (AXP), <br> 
+Caterpillar (CAT), and Starbucks (SBUX) from January 01, 2020 to <br> 
+February 10, 2023. The price data can be obtained by using R package quantmod. 
+
+```{r}
+getSymbols("AXP",from="2020-01-01",to='2023-02-11')
+getSymbols("CAT",from="2020-01-01",to='2023-02-11')
+getSymbols("SBUX",from="2020-01-01",to='2023-02-11')
+```
+
+d.Test the null hypothesis that the mean of the log returns of each stock is zero.<br> 
+That is, perform three separate tests.<br>
+Use 5% significance level to draw your conclusion.<br>
+( You can use R function t.test() to answer the problem. ) 
+
+### 取出 adjust price
+
+```{r}
+AXP_adjust = AXP[,6]
+CAT_adjust = CAT[,6]
+SBUX_adjust = SBUX[,6]
+```
+
++ $r_t = ln(R_t + 1)$
++ $r_t = ln(P_t) - ln(P_{t-1})$
+
++ $R_t = e^{r_t}-1$
++ simple returns : $R_t$
++ log returns : $r_t$
+
++ $R_t = \frac{P_{t}-P_{t-1}}{P_{t-1}}$
+
+### Log Return in percentages
+
+```{r}
+# Log Return : r_t = ln(P_t) - ln(P_{t-1})
+
+AXP_log_returns = diff(log(AXP_adjust))*100
+head(AXP_log_returns)
+CAT_log_returns = diff(log(CAT_adjust))*100
+head(CAT_log_returns)
+SBUX_log_returns = diff(log(SBUX_adjust))*100
+head(SBUX_log_returns)
+
+```
+
+### t.test()
+
+```{r}
+
+# AXP_log_returns
+t.test(as.vector(AXP_log_returns)) 
+# p-value = 0.6147 not reject H0，the mean of the log returns is zero
+# 95 percent confidence interval : -0.1465192  0.2476335
+
+# CAT_log_returns
+t.test(as.vector(CAT_log_returns)) 
+# p-value = 0.3549 not reject H0，the mean of the log returns is zero
+# 95 percent confidence interval : -0.08246387  0.22966233
+
+# SBUX_log_returns
+t.test(as.vector(SBUX_log_returns)) 
+# p-value = 0.694 not reject H0，the mean of the log returns is zero
+# 95 percent confidence interval : -0.1255052  0.1884439
+
+```
+
+## **錯:Use 5% significance level to draw your conclusion**
+## **錯:NOT in percentages!!**
+## **改:額外寫出來!!&不要亂換百分比!!**
+
+<br>
+
+AXP:  
+&nbsp;    p-value = 0.7524 > 0.05 $\implies$ non-reject $H_0 : \bar{X}_{axp} = 0$  $\implies$ The mean of the log returns of AXP stock is equal to zero
+
+CAT:  
+&nbsp;    p-value = 0.4065 > 0.05 $\implies$ non-reject $H_0 : \bar{X}_{cat} = 0$ $\implies$ The mean of the log returns of CAT stock is equal to zero
+
+SBUX:  
+&nbsp;    p-value = 0.825 > 0.05 $\implies$ non-reject $H_0 : \bar{X}_{sbux} = 0$ $\implies$ The mean of the log returns of SBUX stock is equal to zero
+
+<br>
+
+### draw
+
+```{r}
+
+# AXP_log_returns
+plot(density(as.vector(AXP_log_returns),na.rm = T),main = "AXP_log_returns")
+abline(v = c(-0.1465192,0.2476335),col=c("red","red"),lty=2,lwd=1)
+
+# CAT_log_returns
+plot(density(as.vector(CAT_log_returns),na.rm = T),main = 'CAT_log_returns')
+abline(v = c(-0.08246387,0.22966233),col=c("red","red"),lty=2,lwd=1)
+
+# SBUX_log_returns
+plot(density(as.vector(SBUX_log_returns),na.rm = T),main = "SBUX_log_returns")
+abline(v = c(-0.1255052,0.1884439),col=c("red","red"),lty=2,lwd=1)
+
+```
+
+## 2.
+
+Consider the monthly stock returns for General Motors (GM), CRSP value-weighted <br> 
+index (VW), CRSP equal weighted index (EW), and S&P composite index <br>
+from January 1975 to December 2008. <br>
+The returns of the indexes include dividend distributions. <br>
+Data file is m-gm3dx7508.txt (date, gm, vw, ew, sp).
+
+### 月度簡單回報
+
+```{r}
+da = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-gm3dx7508.txt",header = T)
+head(da)
+```
+
+d.Test the null hypothesis that the mean of the log returns of each stock is zero. <br>
+That is, perform three separate tests. <br>
+Use 5% significance level to draw your conclusion. <br>
+
++ $r_t = ln(R_t + 1)$
+
+### Log Return in percentages
+
+```{r, warning=FALSE}
+# Log Return : r_t = ln(R_t + 1)*100
+
+a = da[,c("gm","vw","ew","sp")]
+log_returns = log(a + 1)*100
+head(log_returns)
+
+```
+
+### t.test()
+
+```{r}
+
+# "gm"
+t.test(log_returns[,"gm"]) 
+# p-value = 0.8166 not reject H0，the mean of the log returns is zero
+# 95 percent confidence interval : -0.8231636  1.0435276
+
+# "vw"
+t.test(log_returns[,"vw"]) 
+# p-value = 7.332e-05 reject H0，the mean of the log returns is not zero
+# 95 percent confidence interval : 0.4607213 1.3484127
+
+# "ew"
+t.test(log_returns[,"ew"]) 
+# p-value = 3.425e-05 reject H0，the mean of the log returns is not zero
+# 95 percent confidence interval : 0.6194647 1.7145293
+
+# "sp"
+t.test(log_returns[,"sp"]) 
+# p-value = 0.003939 reject H0，the mean of the log returns is not zero
+# 95 percent confidence interval : 0.2035053 1.0603692
+
+```
+
+```{r}
+apply(log_returns,2,t.test)   # t.test
+```
+
+<br>
+
+GM:  
+&nbsp;    p-value = 0.8166 > 0.05 $\implies$ non-reject $H_0 : \bar{X}_{gm} = 0$  $\implies$ The mean of the log returns of GM stock is equal to zero
+
+VW:  
+&nbsp;    p-value = 7.332e-05 < 0.05 $\implies$ reject $H_0 : \bar{X}_{vw} = 0$  $\implies$ The mean of the log returns of VW stock is not equal to zero
+
+EW:  
+&nbsp;    p-value = 3.425e-05 < 0.05 $\implies$ reject $H_0 : \bar{X}_{ew} = 0$  $\implies$ The mean of the log returns of EW stock is not equal to zero
+
+S&P:  
+&nbsp;    p-value = 0.003939 < 0.05 $\implies$ reject $H_0 : \bar{X}_{sp} = 0$  $\implies$ The mean of the log returns of S&P stock is not equal to zero
+
+<br>
+
+### draw
+
+```{r}
+
+# "gm"
+plot(density(log_returns[,"gm"],na.rm = T),main = "gm")
+abline(v = c(-0.8231636, 1.0435276),col=c("red","red"),lty=2,lwd=1)
+
+# "vw"
+plot(density(log_returns[,"vw"],na.rm = T),main = "vw")
+abline(v = c(0.4607213, 1.3484127),col=c("red","red"),lty=2,lwd=1)
+
+# "ew"
+plot(density(log_returns[,"ew"],na.rm = T),main = "ew")
+abline(v = c(0.6194647, 1.7145293),col=c("red","red"),lty=2,lwd=1)
+
+# "sp"
+plot(density(log_returns[,"sp"],na.rm = T),main = "sp")
+abline(v = c(0.2035053, 1.0603692),col=c("red","red"),lty=2,lwd=1)
+
+```
+
+## 3.
+
+Consider the daily log returns of American Express stock <br>
+from January 01, 2020 to February 10, 2023 as in Exercise 1.1.
+
++ getSymbols("AXP",from="2020-01-01",to='2023-02-11')
++ AXP_adjust = AXP[,6]
+<br>
+
++ Daily Log Return in percentages
++ $r_t = ln(P_t) - ln(P_{t-1})$
++ AXP_log_returns = diff(log(AXP_adjust))*100
++ head(AXP_log_returns)
+
+### Daily Log Return in percentages
+
+```{r}
+head(AXP_log_returns)
+```
+
+Use the 5% significance level to perform the following tests:<br>
+a. Test the null hypothesis that the skewness of the returns is zero. 
+
+### skewness is zero test 
+
+```{r}
+sk = skewness(AXP_log_returns, na.rm=TRUE) # 0.6272351
+
+# Compute test statistic
+t = nrow(AXP_log_returns)-1                # sum(is.na(AXP_log_returns)) : 1
+tl = sk/sqrt(6/t)                          # 7.165321
+
+# Compute p-value
+pv = 2*(1 - pnorm(tl,lower.tail = TRUE)) 
+pv                                         # 7.760459e-13
+
+# p-value = 7.760459e-13，reject H0，skewness of the returns is not zero
+
+```
+
+### skewness.norm.test
+
+```{r}
+skewness.norm.test(AXP_log_returns[-1,])
+```
+
+b. Test the null hypothesis that the excess kurtosis of the returns is zero. 
+
+### kurtosis is zero test
+
+```{r}
+ku = kurtosis(AXP_log_returns,na.rm=TRUE)  # 11.04311
+
+# Compute test statistic
+k = nrow(AXP_log_returns)-1                # sum(is.na(AXP_log_returns)) : 1
+kl = (ku-3)/sqrt(24/k)                     # 45.94085
+
+# Compute p-value
+pv = 2*(1 - pnorm(kl,lower.tail = TRUE)) 
+pv                                         # 0
+
+# p-value = 0，reject H0，kurtosis of the returns is not zero
+
+```
+
+### kurtosis.norm.test
+
+```{r}
+kurtosis.norm.test(AXP_log_returns[-1,])
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+### normal test
+# normalTest
+```
+
+## 4.
+
+Daily foreign exchange rates (spot rates) can be obtained from the <br> 
+Federal Reserve Bank in Chicago. The data are the noon buying rates <br> 
+in New York City certified by the Federal Reserve Bank of New York. <br><br> 
+Consider the exchange rates between the U.S. dollar and <br> 
+the Canadian dollar, euro, U.K. pound, and the Japanese yen <br> 
+from January 4, 2000, to March 27, 2009. The data are also on the Web. <br> 
+(d-caus.txt, d-usuk.txt, d-jpus.txt and d-useu.txt)
+
+```{r}
+
+# the dollar-euro exchange rates
+useu = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-useu.txt",header = T)
+head(useu)
+
+# the dollar-Japanese yen exchange rates
+jpus = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-jpus.txt",header = T)
+head(jpus)
+
+```
+
++ **Daily Log Return in percentages**
++ $r_t = ln(P_t) - ln(P_{t-1})$
+
+```{r}
+# Log Return : r_t = ln(P_t) - ln(P_{t-1})
+
+useu_log_return = 100*(diff(log(useu[,"Value"])))
+head(useu_log_return)
+
+jpus_log_return = 100*(diff(log(jpus[,"value"])))
+head(jpus_log_return)
+
+```
+
+c.
+
+Discuss the **empirical characteristics** <br>
+of the log returns of the dollar-Japanese yen exchange rates.
+
+```{r}
+basicStats(jpus_log_return)
+
+# Minimum	-5.215648			
+# Maximum	2.708365	
+
+# 95% 的信心，日對數報酬率的平均為 0
+# Mean	-0.002185	
+# LCL Mean	-0.029175		
+# UCL Mean	0.024805			
+
+# Variance	0.439876			
+# Stdev	0.663232		
+
+# Skewness	-0.670617			 # 左偏	
+# Kurtosis	4.580879		   # 厚尾
+
+```
+
+### normal test
+
+```{r}
+normtest::jb.norm.test(jpus_log_return) 
+normalTest(jpus_log_return,method = "jb",na.rm = T)
+# p-value < 2.2e-16，reject H0，the dist. is not normal
+
+```
+
+### Plot normal
+
+```{r}
+plot(density(jpus_log_return),main = "jpus_log_return",xlim=c(-4,4),ylim=c(-0.05,0.9),ylab = "density")
+abline(v = c(-0.030883, 0.019389),col=c("red","red"),lty=2,lwd=1)
+abline(v = c(0),col="blue",lty=1,lwd=1)
+
+par(new=TRUE)
+
+x = rnorm(1000)
+curve(dnorm(x),from = -4, to = 4,ylim=c(-0.05,0.9),ylab = "density",xlab = "")
+
+```
+
+d.
+
+Use **kernel density estimation** to obtain **a density plot** <br>
+of the daily log returns of the dollar-euro exchange rates
+
+```{r}
+plot(density(useu_log_return),main = "useu_log_return")
+```
+
+---

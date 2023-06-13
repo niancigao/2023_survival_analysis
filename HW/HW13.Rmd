@@ -1,0 +1,162 @@
+---
+title: "Time Series HW13"
+author: "B082040005 高念慈"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, results='hide', message=FALSE, warning=FALSE}
+# require(quantmod)  # 股價
+# require(moments)     # 偏、峰度
+# install.packages("fGarch")
+# library(fBasics)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/normtest/normtest_1.1.tar.gz')
+# library(normtest)
+# library(ggplot2)
+
+# require(sandwich)
+# require(lmtest)
+
+library(fUnitRoots)
+library(TSA)
+library(fGarch)
+```
+
+## 2.
+Consider the monthly simple returns of Intel stock from January 1973 to <br> 
+December 2008 in m-intc7308.txt.Transform the returns into log returns.<br> 
+Build a GARCH model for the transformed series and compute 1-step- to <br>
+5-step-ahead volatility forecasts at the forecast origin December 2008.
+
+```{r}
+intc = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/m-intc7308.txt", header=T)
+head(intc)
+```
+
+```{r}
+logrtn_intc = log(intc$rtn +1)
+head(logrtn_intc)
+```
+
++ Box.test to find the Q(12) whether the the log return has the serial correlations or not
+
+```{r}
+Box.test(logrtn_intc, lag=12, type='Ljung')
+```
+
++ p-value > 0.05,thus,the log return has no serial correlation
+
+```{r}
+at = logrtn_intc - mean(logrtn_intc)
+acf(at^2, 40)
+pacf(at^2, 40)
+eacf(at^2)
+```
+
++ $a^2_t$ ~ ARMA(1,1)
+
+```{r}
+# library(fGarch)
+garch1.fit = garchFit(~ garch(1,1), data=logrtn_intc, trace=FALSE)
+summary(garch1.fit)
+```
+
++ 1-step- to 5-step-ahead volatility forecasts
+
+```{r}
+predict(garch1.fit,n.ahead=5)
+```
+
+## 3.
+Consider the daily simple returns of the S&P composite index in the file d-gmsp9908.txt.
+
+```{r}
+gmsp = read.table("https://faculty.chicagobooth.edu/-/media/faculty/ruey-s-tsay/teaching/fts3/d-gmsp9908.txt", header=T)
+head(gmsp)
+sim_sp = gmsp$sp
+```
+
+(a) Is there any ARCH effect in the simple return series? <br>
+Use 10 lags of the squared returns and 5% significance level to perform the test.
+
+```{r}
+at_2 = sim_sp - mean(sim_sp)
+Box.test(at_2^2, lag=10, type="Ljung")
+```
+
++ there are ARCH effects in simple return with lag 10 in SP. (p-value < 0.05)
+
+(b) Build an adequate GARCH model for the simple return series.
+
++ Serial correlation test Q(10) in SP
+
+```{r}
+acf(sim_sp)
+Box.test(sim_sp, lag=10, type='Ljung')
+```
+
++ there are serial correlation of simple return of SP (p-value < 0.05)
+
+```{r}
+eacf(sim_sp)
+```
+
+```{r}
+m1 = arima(sim_sp, order = c(1,0,5))
+m1
+```
+
+```{r}
+rbind(m1$coef-2*sqrt(diag(m1$var.coef)),
+      m1$coef+2*sqrt(diag(m1$var.coef)))
+```
+
+```{r}
+m2 = arima(sim_sp, order = c(1,0,5),
+           fixed = c(NA,NA,NA,NA,0,NA,0))
+m2
+```
+
+```{r}
+Box.test(m2$residuals, lag=10, type='Ljung', fitdf = 6-1)
+```
+
++ p-value>0.05，無序列相關，足夠
+
++ EACF of $a_t^2$
+
+```{r}
+eacf(at_2^2)
+ar(at_2^2)$order
+acf(at_2^2)
+pacf(at_2^2)
+```
+
+```{r}
+arch2.fit = garchFit(~ arma(1,5) + garch(1,1), data=sim_sp, trace=FALSE)
+summary(arch2.fit)
+```
+
+```{r}
+m4 = garchFit(~ arma(0,1) + garch(1,1), data=sim_sp, trace=FALSE)
+summary(m4)
+```
+
++ $a_t$ : p-value>0.05，mean eq OK
++ $a_t^2$ : pvalue>0.05，variance eq OK
+
+(c) Compute 1-step- to 4-step-ahead forecasts of the simple return <br>
+and its volatility based on the fitted model.
+
++ 1-step- to 4-step-ahead volatility forecasts
+
+```{r}
+predict(m4, n.ahead=4)
+```
+
+---
+---
